@@ -460,8 +460,8 @@ layoutWith { options } attrs child =
                 )
             )
             (Array.flatten 
-                [Internal.rootStyle
-                ,attrs
+                [ Internal.rootStyle
+                , attrs
                 ]
             )
         )

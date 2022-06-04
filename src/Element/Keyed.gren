@@ -26,45 +26,51 @@ import Internal.Style exposing (classes)
 
 
 {-| -}
-el : List (Attribute msg) -> ( String, Element msg ) -> Element msg
+el : Array (Attribute msg) -> { key: String, node: Element msg } -> Element msg
 el attrs child =
     Internal.element
         Internal.asEl
         Internal.div
-        (width shrink
-            :: height shrink
-            :: attrs
+        (Array.prefix 
+            [ width shrink
+            , height shrink
+            ] 
+            attrs
         )
         (Internal.Keyed [ child ])
 
 
 {-| -}
-row : List (Attribute msg) -> List ( String, Element msg ) -> Element msg
+row : Array (Attribute msg) -> Array { key: String, node: Element msg } -> Element msg
 row attrs children =
     Internal.element
         Internal.asRow
         Internal.div
-        (Internal.htmlClass (classes.contentLeft ++ " " ++ classes.contentCenterY)
-            :: width shrink
-            :: height shrink
-            :: attrs
+        (Array.prefix 
+            [ Internal.htmlClass (classes.contentLeft ++ " " ++ classes.contentCenterY)
+            , width shrink
+            , height shrink
+            ] 
+            attrs
         )
         (Internal.Keyed children)
 
 
 {-| -}
-column : List (Attribute msg) -> List ( String, Element msg ) -> Element msg
+column : Array (Attribute msg) -> Array { key: String, node: Element msg } -> Element msg
 column attrs children =
     Internal.element
         Internal.asColumn
         Internal.div
-        (Internal.htmlClass
-            (classes.contentTop
-                ++ " "
-                ++ classes.contentLeft
-            )
-            :: height shrink
-            :: width shrink
-            :: attrs
+        (Array.prefix 
+            [ Internal.htmlClass
+                (classes.contentTop
+                    ++ " "
+                    ++ classes.contentLeft
+                )
+            , height shrink
+            , width shrink
+            ] 
+            attrs
         )
         (Internal.Keyed children)

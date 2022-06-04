@@ -10,6 +10,7 @@ module Element.Input exposing
     , Label, labelAbove, labelBelow, labelLeft, labelRight, labelHidden
     )
 
+
 {-| Input elements have a lot of constraints!
 
 We want all of our input elements to:
@@ -183,7 +184,7 @@ For other inputs such as `Input.text`, consider simply rendering it in a normal 
 Alternatively, see if it's reasonable to _not_ display an input if you'd normally disable it. Is there an option where it's only visible when it's editable?
 
 -}
-
+import Math
 import Element exposing (Attribute, Color, Element)
 import Element.Background as Background
 import Element.Border as Border
@@ -201,7 +202,7 @@ import Json.Decode as Json
 
 {-| -}
 type Placeholder msg
-    = Placeholder (List (Attribute msg)) (Element msg)
+    = Placeholder (Array (Attribute msg)) (Element msg)
 
 
 white =
@@ -220,7 +221,7 @@ charcoal =
 
 
 {-| -}
-placeholder : List (Attribute msg) -> Element msg -> Placeholder msg
+placeholder : Array (Attribute msg) -> Element msg -> Placeholder msg
 placeholder =
     Placeholder
 
@@ -234,7 +235,7 @@ type LabelLocation
 
 {-| -}
 type Label msg
-    = Label LabelLocation (List (Attribute msg)) (Element msg)
+    = Label LabelLocation (Array (Attribute msg)) (Element msg)
     | HiddenLabel String
 
 
@@ -260,25 +261,25 @@ isStacked label =
 
 
 {-| -}
-labelRight : List (Attribute msg) -> Element msg -> Label msg
+labelRight : Array (Attribute msg) -> Element msg -> Label msg
 labelRight =
     Label OnRight
 
 
 {-| -}
-labelLeft : List (Attribute msg) -> Element msg -> Label msg
+labelLeft : Array (Attribute msg) -> Element msg -> Label msg
 labelLeft =
     Label OnLeft
 
 
 {-| -}
-labelAbove : List (Attribute msg) -> Element msg -> Label msg
+labelAbove : Array (Attribute msg) -> Element msg -> Label msg
 labelAbove =
     Label Above
 
 
 {-| -}
-labelBelow : List (Attribute msg) -> Element msg -> Label msg
+labelBelow : Array (Attribute msg) -> Element msg -> Label msg
 labelBelow =
     Label Below
 
@@ -334,7 +335,7 @@ The `onPress` handler will be fired either `onClick` or when the element is focu
 
 -}
 button :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onPress : Maybe msg
         , label : Element msg
@@ -348,9 +349,10 @@ button attrs { onPress, label } =
         -- We'd like to fire just once on the enter key, which means using keyup instead of keydown.
         -- Because we have no way to disable keydown, though our messages get doubled.
         Internal.div
-        (Element.width Element.shrink
-            :: Element.height Element.shrink
-            :: Internal.htmlClass
+        (Array.prefix 
+            [ Element.width Element.shrink
+            , Element.height Element.shrink
+            , Internal.htmlClass
                 (classes.contentCenterX
                     ++ " "
                     ++ classes.contentCenterY
@@ -359,17 +361,18 @@ button attrs { onPress, label } =
                     ++ " "
                     ++ classes.noTextSelection
                 )
-            :: Element.pointer
-            :: focusDefault attrs
-            :: Internal.Describe Internal.Button
-            :: Internal.Attr (Html.Attributes.tabindex 0)
-            :: (case onPress of
+            , Element.pointer
+            , focusDefault attrs
+            , Internal.Describe Internal.Button
+            , Internal.Attr (Html.Attributes.tabindex 0)
+            ] (case onPress of
                     Nothing ->
-                        Internal.Attr (Html.Attributes.disabled True) :: attrs
+                        Array.pushFirst (Internal.Attr (Html.Attributes.disabled True)) attrs
 
                     Just msg ->
-                        Events.onClick msg
-                            :: onKeyLookup
+                        Array.prefix 
+                            [ Events.onClick msg
+                            , onKeyLookup
                                 (\code ->
                                     if code == enter then
                                         Just msg
@@ -380,14 +383,15 @@ button attrs { onPress, label } =
                                     else
                                         Nothing
                                 )
-                            :: attrs
-               )
+                            ] 
+                            attrs
+            )
         )
         (Internal.Unkeyed [ label ])
 
 
 focusDefault attrs =
-    if List.any hasFocusStyle attrs then
+    if Array.any hasFocusStyle attrs then
         Internal.NoAttribute
 
     else
@@ -421,7 +425,7 @@ type alias Checkbox msg =
 
 -}
 checkbox :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : Bool -> msg
         , icon : Bool -> Element msg
@@ -458,8 +462,9 @@ checkbox attrs { label, icon, checked, onChange } =
                 ++ attrs
     in
     applyLabel
-        (Internal.Attr (Html.Attributes.attribute "role" "checkbox")
-            :: Internal.Attr
+        (Array.prefix 
+            [ Internal.Attr (Html.Attributes.attribute "role" "checkbox")
+            , Internal.Attr
                 (Html.Attributes.attribute "aria-checked" <|
                     if checked then
                         "true"
@@ -467,8 +472,9 @@ checkbox attrs { label, icon, checked, onChange } =
                     else
                         "false"
                 )
-            :: hiddenLabelAttribute label
-            :: attributes
+            , hiddenLabelAttribute label
+            ] 
+            attributes
         )
         label
         (Internal.element
@@ -487,11 +493,11 @@ checkbox attrs { label, icon, checked, onChange } =
 
 {-| -}
 type Thumb
-    = Thumb (List (Attribute Never))
+    = Thumb (Array (Attribute Never))
 
 
 {-| -}
-thumb : List (Attribute Never) -> Thumb
+thumb : Array (Attribute Never) -> Thumb
 thumb =
     Thumb
 
@@ -554,7 +560,7 @@ The slider can be vertical or horizontal depending on the width/height of the sl
 
 -}
 slider :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : Float -> msg
         , label : Label msg
@@ -577,14 +583,14 @@ slider attributes input =
             Internal.getHeight thumbAttributes
 
         vertical =
-            case ( trackWidth, trackHeight ) of
-                ( Nothing, Nothing ) ->
+            case { trackWidth=trackWidth, trackHeight=trackHeight } of
+                { trackWidth = Nothing, trackHeight = Nothing } ->
                     False
 
-                ( Just (Internal.Px w), Just (Internal.Px h) ) ->
+                { trackWidth=Just (Internal.Px w), trackHeight=Just (Internal.Px h) } ->
                     h > w
 
-                ( Just (Internal.Px _), Just (Internal.Fill _) ) ->
+                { trackWidth=Just (Internal.Px _), trackHeight=Just (Internal.Fill _) } ->
                     True
 
                 _ ->
@@ -596,8 +602,8 @@ slider attributes input =
         trackWidth =
             Internal.getWidth attributes
 
-        ( spacingX, spacingY ) =
-            Internal.getSpacing attributes ( 5, 5 )
+        { x=spacingX, y=spacingY } =
+            Internal.getSpacing attributes {x= 5, y=5 }
 
         factor =
             (input.value - input.min)
@@ -771,19 +777,21 @@ slider attributes input =
                 ]
                 (Internal.Unkeyed [])
             , Element.el
-                (Element.width
-                    (Maybe.withDefault Element.fill trackWidth)
-                    :: Element.height
-                        (Maybe.withDefault (Element.px 20) trackHeight)
-                    :: attributes
+                (Array.flatten
+                    [ Array.prefix 
+                        [ Element.width (Maybe.withDefault Element.fill trackWidth)
+                        , Element.height (Maybe.withDefault (Element.px 20) trackHeight)
+                        ] 
+                        attributes
                     -- This is after `attributes` because the thumb should be in front of everything.
-                    ++ [ Element.behindContent <|
+                    , [ Element.behindContent <|
                             if vertical then
-                                viewVerticalThumb factor (Internal.htmlClass "focusable-thumb" :: thumbAttributes) trackWidth
+                                viewVerticalThumb factor (Array.pushFirst (Internal.htmlClass "focusable-thumb") thumbAttributes) trackWidth
 
                             else
-                                viewHorizontalThumb factor (Internal.htmlClass "focusable-thumb" :: thumbAttributes) trackHeight
-                       ]
+                                viewHorizontalThumb factor (Array.pushFirst (Internal.htmlClass "focusable-thumb")  thumbAttributes) trackHeight
+                        ]
+                    ]
                 )
                 Element.none
             ]
@@ -797,16 +805,17 @@ viewHorizontalThumb factor thumbAttributes trackHeight =
         , Element.centerY
         ]
         [ Element.el
-            [ Element.width (Element.fillPortion (round <| factor * 10000))
+            [ Element.width (Element.fillPortion (Math.round <| factor * 10000))
             ]
             Element.none
         , Element.el
-            (Element.centerY
-                :: List.map (Internal.mapAttr Basics.never) thumbAttributes
+            (Array.pushFirst 
+                Element.centerY
+                (Array.map (Internal.mapAttr Basics.never) thumbAttributes)
             )
             Element.none
         , Element.el
-            [ Element.width (Element.fillPortion (round <| (abs <| 1 - factor) * 10000))
+            [ Element.width (Element.fillPortion (Math.round <| (Math.abs <| 1 - factor) * 10000))
             ]
             Element.none
         ]
@@ -819,16 +828,15 @@ viewVerticalThumb factor thumbAttributes trackWidth =
         , Element.centerX
         ]
         [ Element.el
-            [ Element.height (Element.fillPortion (round <| (abs <| 1 - factor) * 10000))
+            [ Element.height (Element.fillPortion (Math.round <| (Math.abs <| 1 - factor) * 10000))
             ]
             Element.none
         , Element.el
-            (Element.centerX
-                :: List.map (Internal.mapAttr Basics.never) thumbAttributes
+            (Array.pushFirst Element.centerX  (Array.map (Internal.mapAttr Basics.never) thumbAttributes)
             )
             Element.none
         , Element.el
-            [ Element.height (Element.fillPortion (round <| factor * 10000))
+            [ Element.height (Element.fillPortion (Math.round <| factor * 10000))
             ]
             Element.none
         ]
@@ -856,7 +864,7 @@ type alias Text msg =
 
 
 {-| -}
-textHelper : TextInput -> List (Attribute msg) -> Text msg -> Element msg
+textHelper : TextInput -> Array (Attribute msg) -> Text msg -> Element msg
 textHelper textInput attrs textOptions =
     let
         withDefaults =
@@ -882,10 +890,10 @@ textHelper textInput attrs textOptions =
                     -- when things are off by a pixel or two.
                     -- (or at least when the browser *thinks* it's off by a pixel or two)
                     Just
-                        { top = max 0 (floor (t - 3))
-                        , right = max 0 (floor (r - 3))
-                        , bottom = max 0 (floor (b - 3))
-                        , left = max 0 (floor (l - 3))
+                        { top = max 0 (Math.floor (t - 3))
+                        , right = max 0 (Math.floor (r - 3))
+                        , bottom = max 0 (Math.floor (b - 3))
+                        , left = max 0 (Math.floor (l - 3))
                         }
 
                 _ ->
@@ -898,17 +906,15 @@ textHelper textInput attrs textOptions =
 
                 TextArea ->
                     withDefaults
-                        |> List.filterMap getHeight
-                        |> List.reverse
-                        |> List.head
+                        |> Array.filterMap getHeight
+                        |> Array.last
                         |> Maybe.map isConstrained
                         |> Maybe.withDefault False
 
         parentPadding =
             withDefaults
-                |> List.filterMap getPadding
-                |> List.reverse
-                |> List.head
+                |> Array.filterMap getPadding
+                |> Array.last
                 |> Maybe.withDefault
                     { top = 0
                     , right = 0
@@ -970,13 +976,13 @@ textHelper textInput attrs textOptions =
                         Internal.asEl
                         Internal.div
                         ((if heightConstrained then
-                            (::) Element.scrollbarY
+                            Array.pushFirst Element.scrollbarY
 
                           else
                             identity
                          )
                             [ Element.width Element.fill
-                            , if List.any hasFocusStyle withDefaults then
+                            , if Array.any hasFocusStyle withDefaults then
                                 Internal.NoAttribute
 
                               else
@@ -989,11 +995,13 @@ textHelper textInput attrs textOptions =
                             [ Internal.element
                                 Internal.asParagraph
                                 Internal.div
-                                (Element.width Element.fill
-                                    :: Element.height Element.fill
-                                    :: Element.inFront inputElement
-                                    :: Internal.htmlClass classes.inputMultilineParent
-                                    :: redistributed.wrapper
+                                (Array.prefix 
+                                    [ Element.width Element.fill
+                                    , Element.height Element.fill
+                                    , Element.inFront inputElement
+                                    , Internal.htmlClass classes.inputMultilineParent
+                                    ] 
+                                    redistributed.wrapper
                                 )
                                 (Internal.Unkeyed
                                     (if textOptions.text == "" then
@@ -1027,14 +1035,16 @@ textHelper textInput attrs textOptions =
                     Internal.element
                         Internal.asEl
                         Internal.div
-                        (Element.width Element.fill
-                            :: (if List.any hasFocusStyle withDefaults then
+                        (Array.prefix 
+                            [ Element.width Element.fill
+                            , (if Array.any hasFocusStyle withDefaults then
                                     Internal.NoAttribute
 
                                 else
                                     Internal.htmlClass classes.focusedWithin
                                )
-                            :: List.concat
+                            ] 
+                            (Array.flatten
                                 [ redistributed.parent
                                 , case textOptions.placeholder of
                                     Nothing ->
@@ -1045,20 +1055,23 @@ textHelper textInput attrs textOptions =
                                             (renderPlaceholder place redistributed.cover (textOptions.text == ""))
                                         ]
                                 ]
+                            )
                         )
                         (Internal.Unkeyed [ inputElement ])
     in
     applyLabel
-        (Internal.Class Flag.cursor classes.cursorText
-            :: (if isHiddenLabel textOptions.label then
+        (Array.prefix 
+            [ Internal.Class Flag.cursor classes.cursorText
+            , (if isHiddenLabel textOptions.label then
                     Internal.NoAttribute
 
                 else
                     Element.spacing
                         5
                )
-            :: Region.announce
-            :: redistributed.fullParent
+            , Region.announce
+            ] 
+            redistributed.fullParent
         )
         textOptions.label
         wrappedInput
@@ -1118,7 +1131,7 @@ renderPlaceholder (Placeholder placeholderAttrs placeholderEl) forPlaceholder on
 {-| Because textareas are now shadowed, where they're rendered twice,
 we to move the literal text area up because spacing is based on line height.
 -}
-calcMoveToCompensateForPadding : List (Attribute msg) -> Attribute msg
+calcMoveToCompensateForPadding : Array (Attribute msg) -> Attribute msg
 calcMoveToCompensateForPadding attrs =
     let
         gatherSpacing attr found =
@@ -1134,12 +1147,12 @@ calcMoveToCompensateForPadding attrs =
                 _ ->
                     found
     in
-    case List.foldr gatherSpacing Nothing attrs of
+    case Array.foldr gatherSpacing Nothing attrs of
         Nothing ->
             Internal.NoAttribute
 
         Just vSpace ->
-            Element.moveUp (toFloat (floor (toFloat vSpace / 2)))
+            Element.moveUp (toFloat (Math.floor (toFloat vSpace / 2)))
 
 
 {-| Given the list of attributes provided to `Input.multiline` or `Input.text`,
@@ -1156,16 +1169,16 @@ redistribute them to the parent, the input, or the cover.
 redistribute :
     Bool
     -> Bool
-    -> List (Attribute msg)
+    -> Array (Attribute msg)
     ->
-        { fullParent : List (Attribute msg)
-        , parent : List (Attribute msg)
-        , wrapper : List (Attribute msg)
-        , input : List (Attribute msg)
-        , cover : List (Attribute msg)
+        { fullParent : Array (Attribute msg)
+        , parent : Array (Attribute msg)
+        , wrapper : Array (Attribute msg)
+        , input : Array (Attribute msg)
+        , cover : Array (Attribute msg)
         }
 redistribute isMultiline stacked attrs =
-    List.foldl (redistributeOver isMultiline stacked)
+    Array.foldl (redistributeOver isMultiline stacked)
         { fullParent = []
         , parent = []
         , input = []
@@ -1174,11 +1187,11 @@ redistribute isMultiline stacked attrs =
         }
         attrs
         |> (\redist ->
-                { parent = List.reverse redist.parent
-                , fullParent = List.reverse redist.fullParent
-                , wrapper = List.reverse redist.wrapper
-                , input = List.reverse redist.input
-                , cover = List.reverse redist.cover
+                { parent = Array.reverse redist.parent
+                , fullParent = Array.reverse redist.fullParent
+                , wrapper = Array.reverse redist.wrapper
+                , input = Array.reverse redist.input
+                , cover = Array.reverse redist.cover
                 }
            )
 
@@ -1260,66 +1273,66 @@ isPixel len =
 redistributeOver isMultiline stacked attr els =
     case attr of
         Internal.Nearby _ _ ->
-            { els | parent = attr :: els.parent }
+            { els | parent = Array.pushFirst attr els.parent }
 
         Internal.Width width ->
             if isFill width then
                 { els
-                    | fullParent = attr :: els.fullParent
-                    , parent = attr :: els.parent
-                    , input = attr :: els.input
+                    | fullParent = Array.pushFirst attr els.fullParent
+                    , parent = Array.pushFirst attr els.parent
+                    , input = Array.pushFirst attr els.input
                 }
 
             else if stacked then
                 { els
-                    | fullParent = attr :: els.fullParent
+                    | fullParent = Array.pushFirst attr els.fullParent
                 }
 
             else
                 { els
-                    | parent = attr :: els.parent
+                    | parent = Array.pushFirst attr els.parent
                 }
 
         Internal.Height height ->
             if not stacked then
                 { els
-                    | fullParent = attr :: els.fullParent
-                    , parent = attr :: els.parent
+                    | fullParent = Array.pushFirst attr els.fullParent
+                    , parent = Array.pushFirst attr els.parent
                 }
 
             else if isFill height then
                 { els
-                    | fullParent = attr :: els.fullParent
-                    , parent = attr :: els.parent
+                    | fullParent = Array.pushFirst attr els.fullParent
+                    , parent = Array.pushFirst attr els.parent
                 }
 
             else if isPixel height then
-                { els | parent = attr :: els.parent }
+                { els | parent = Array.pushFirst attr els.parent }
 
             else
                 { els
-                    | parent = attr :: els.parent
+                    | parent = Array.pushFirst attr els.parent
                 }
 
         Internal.AlignX _ ->
-            { els | fullParent = attr :: els.fullParent }
+            { els | fullParent = Array.pushFirst attr els.fullParent }
 
         Internal.AlignY _ ->
-            { els | fullParent = attr :: els.fullParent }
+            { els | fullParent = Array.pushFirst attr  els.fullParent }
 
         Internal.StyleClass _ (Internal.SpacingStyle _ _ _) ->
             { els
-                | fullParent = attr :: els.fullParent
-                , parent = attr :: els.parent
-                , input = attr :: els.input
-                , wrapper = attr :: els.wrapper
+                | fullParent = Array.pushFirst attr els.fullParent
+                , parent = Array.pushFirst attr  els.parent
+                , input = Array.pushFirst attr els.input
+                , wrapper = Array.pushFirst attr els.wrapper
             }
 
         Internal.StyleClass cls (Internal.PaddingStyle pad t r b l) ->
             if isMultiline then
                 { els
-                    | parent = attr :: els.parent
-                    , cover = attr :: els.cover
+                    | parent = Array.pushFirst attr els.parent
+                    , cover = Array.pushFirst attr els.cover
                 }
 
             else
@@ -1360,51 +1373,51 @@ redistributeOver isMultiline stacked attr els =
                             )
                 in
                 { els
-                    | parent = reducedVerticalPadding :: els.parent
-                    , input = newHeight :: newLineHeight :: els.input
-                    , cover = attr :: els.cover
+                    | parent = Array.pushFirst reducedVerticalPadding els.parent
+                    , input = Array.prefix [ newHeight, newLineHeight ] els.input
+                    , cover = Array.pushFirst attr els.cover
                 }
 
         Internal.StyleClass _ (Internal.BorderWidth _ _ _ _ _) ->
             { els
-                | parent = attr :: els.parent
-                , cover = attr :: els.cover
+                | parent = Array.pushFirst attr els.parent
+                , cover = Array.pushFirst attr  els.cover
             }
 
         Internal.StyleClass _ (Internal.Transform _) ->
             { els
-                | parent = attr :: els.parent
-                , cover = attr :: els.cover
+                | parent = Array.pushFirst attr els.parent
+                , cover = Array.pushFirst attr els.cover
             }
 
         Internal.StyleClass _ (Internal.FontSize _) ->
-            { els | fullParent = attr :: els.fullParent }
+            { els | fullParent = Array.pushFirst attr els.fullParent }
 
         Internal.StyleClass _ (Internal.FontFamily _ _) ->
-            { els | fullParent = attr :: els.fullParent }
+            { els | fullParent = Array.pushFirst attr els.fullParent }
 
         Internal.StyleClass flag cls ->
-            { els | parent = attr :: els.parent }
+            { els | parent = Array.pushFirst attr els.parent }
 
         Internal.NoAttribute ->
             els
 
         Internal.Attr a ->
-            { els | input = attr :: els.input }
+            { els | input = Array.pushFirst attr els.input }
 
         Internal.Describe _ ->
-            { els | input = attr :: els.input }
+            { els | input = Array.pushFirst attr els.input }
 
         Internal.Class _ _ ->
-            { els | parent = attr :: els.parent }
+            { els | parent = Array.pushFirst attr els.parent }
 
         Internal.TransformComponent _ _ ->
-            { els | input = attr :: els.input }
+            { els | input = Array.pushFirst attr  els.input }
 
 
 {-| -}
 text :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : String -> msg
         , text : String
@@ -1423,7 +1436,7 @@ text =
 {-| If spell checking is available, this input will be spellchecked.
 -}
 spellChecked :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : String -> msg
         , text : String
@@ -1441,7 +1454,7 @@ spellChecked =
 
 {-| -}
 search :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : String -> msg
         , text : String
@@ -1465,7 +1478,7 @@ A password takes all the arguments a normal `Input.text` would, and also **show*
 
 -}
 newPassword :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : String -> msg
         , text : String
@@ -1496,7 +1509,7 @@ newPassword attrs pass =
 
 {-| -}
 currentPassword :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : String -> msg
         , text : String
@@ -1527,7 +1540,7 @@ currentPassword attrs pass =
 
 {-| -}
 username :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : String -> msg
         , text : String
@@ -1545,7 +1558,7 @@ username =
 
 {-| -}
 email :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : String -> msg
         , text : String
@@ -1569,7 +1582,7 @@ Use `Element.spacing` to change its line-height.
 
 -}
 multiline :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : String -> msg
         , text : String
@@ -1602,7 +1615,7 @@ isHiddenLabel label =
             False
 
 
-applyLabel : List (Attribute msg) -> Label msg -> Element msg -> Element msg
+applyLabel : Array (Attribute msg) -> Label msg -> Element msg -> Element msg
 applyLabel attrs label input =
     case label of
         HiddenLabel labelText ->
@@ -1628,28 +1641,28 @@ applyLabel attrs label input =
                     Internal.element
                         Internal.asColumn
                         (Internal.NodeName "label")
-                        (Internal.htmlClass classes.inputLabel :: attrs)
+                        (Array.pushFirst (Internal.htmlClass classes.inputLabel) attrs)
                         (Internal.Unkeyed [ labelElement, input ])
 
                 Below ->
                     Internal.element
                         Internal.asColumn
                         (Internal.NodeName "label")
-                        (Internal.htmlClass classes.inputLabel :: attrs)
+                        (Array.pushFirst (Internal.htmlClass classes.inputLabel) attrs)
                         (Internal.Unkeyed [ input, labelElement ])
 
                 OnRight ->
                     Internal.element
                         Internal.asRow
                         (Internal.NodeName "label")
-                        (Internal.htmlClass classes.inputLabel :: attrs)
+                        (Array.pushFirst (Internal.htmlClass classes.inputLabel)  attrs)
                         (Internal.Unkeyed [ input, labelElement ])
 
                 OnLeft ->
                     Internal.element
                         Internal.asRow
                         (Internal.NodeName "label")
-                        (Internal.htmlClass classes.inputLabel :: attrs)
+                        (Array.pushFirst (Internal.htmlClass classes.inputLabel) attrs)
                         (Internal.Unkeyed [ labelElement, input ])
 
 
@@ -1681,10 +1694,10 @@ optionWith val view =
 
 {-| -}
 radio :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : option -> msg
-        , options : List (Option option msg)
+        , options : Array (Option option msg)
         , selected : Maybe option
         , label : Label msg
         }
@@ -1696,10 +1709,10 @@ radio =
 {-| Same as radio, but displayed as a row
 -}
 radioRow :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { onChange : option -> msg
-        , options : List (Option option msg)
+        , options : Array (Option option msg)
         , selected : Maybe option
         , label : Label msg
         }
@@ -1775,10 +1788,10 @@ defaultRadioOption optionLabel status =
 
 radioHelper :
     Orientation
-    -> List (Attribute msg)
+    -> Array (Attribute msg)
     ->
         { onChange : option -> msg
-        , options : List (Option option msg)
+        , options : Array (Option option msg)
         , selected : Maybe option
         , label : Label msg
         }
@@ -1821,48 +1834,48 @@ radioHelper orientation attrs input =
         optionArea =
             case orientation of
                 Row ->
-                    row (hiddenLabelAttribute input.label :: attrs)
-                        (List.map renderOption input.options)
+                    row (Array.pushFirst (hiddenLabelAttribute input.label) attrs)
+                        (Array.map renderOption input.options)
 
                 Column ->
-                    column (hiddenLabelAttribute input.label :: attrs)
-                        (List.map renderOption input.options)
+                    column (Array.pushFirst (hiddenLabelAttribute input.label)  attrs)
+                        (Array.map renderOption input.options)
 
         prevNext =
-            case input.options of
-                [] ->
+            case Array.popFirst input.options of
+                Nothing ->
                     Nothing
 
-                (Option val _) :: _ ->
-                    List.foldl track ( NotFound, val, val ) input.options
-                        |> (\( found, b, a ) ->
+                Just { first= Option val _, rest} ->
+                    Array.foldl track {found=NotFound,prev=val,next=val } input.options
+                        |> (\{found, prev, next} ->
                                 case found of
                                     NotFound ->
-                                        Just ( b, val )
+                                        Just { prev=prev, next=val }
 
                                     BeforeFound ->
-                                        Just ( b, val )
+                                        Just { prev=prev, next=val }
 
                                     _ ->
-                                        Just ( b, a )
+                                        Just { prev=prev, next=next }
                            )
 
-        track opt ( found, prev, nxt ) =
+        track opt { found, prev, next } =
             case opt of
                 Option val _ ->
                     case found of
                         NotFound ->
                             if Just val == input.selected then
-                                ( BeforeFound, prev, nxt )
+                                { found=BeforeFound, prev=prev, next=next }
 
                             else
-                                ( found, val, nxt )
+                                { found=found, prev=val, next=next }
 
                         BeforeFound ->
-                            ( AfterFound, prev, val )
+                            { found=AfterFound, prev=prev, next=val }
 
                         AfterFound ->
-                            ( found, prev, nxt )
+                            { found=found, prev=prev, next=next }
 
         events =
             Internal.get
@@ -1883,7 +1896,7 @@ radioHelper orientation attrs input =
                             False
     in
     applyLabel
-        (List.filterMap identity
+        (Array.filterMap identity
             [ Just Element.alignLeft
             , Just (tabindex 0)
             , Just (Internal.htmlClass "focus")
@@ -1895,7 +1908,7 @@ radioHelper orientation attrs input =
                 Nothing ->
                     Nothing
 
-                Just ( prev, next ) ->
+                Just { prev, next } ->
                     Just
                         (onKeyLookup <|
                             \code ->
@@ -1941,26 +1954,26 @@ type Orientation
     | Column
 
 
-column : List (Attribute msg) -> List (Internal.Element msg) -> Internal.Element msg
+column : Array (Attribute msg) -> Array (Internal.Element msg) -> Internal.Element msg
 column attributes children =
     Internal.element
         Internal.asColumn
         Internal.div
-        (Element.height Element.shrink
-            :: Element.width Element.fill
-            :: attributes
+        (Array.prefix 
+            [ Element.height Element.shrink
+            , Element.width Element.fill
+            ] 
+            attributes
         )
         (Internal.Unkeyed children)
 
 
-row : List (Attribute msg) -> List (Internal.Element msg) -> Internal.Element msg
+row : Array (Attribute msg) -> Array (Internal.Element msg) -> Internal.Element msg
 row attributes children =
     Internal.element
         Internal.asRow
         Internal.div
-        (Element.width Element.fill
-            :: attributes
-        )
+        (Array.pushFirst (Element.width Element.fill) attributes)
         (Internal.Unkeyed children)
 
 
@@ -2066,7 +2079,7 @@ onKey desiredCode msg =
     in
     Internal.Attr <|
         Html.Events.preventDefaultOn "keyup"
-            (Json.map (\fired -> ( fired, True )) isKey)
+            (Json.map (\fired -> { message = fired, preventDefault = True }) isKey)
 
 
 
@@ -2109,7 +2122,7 @@ onKeyLookup lookup =
     -- https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Roles/button_role
     Internal.Attr <|
         Html.Events.preventDefaultOn "keydown"
-            (Json.map (\fired -> ( fired, True )) isKey)
+            (Json.map (\fired -> {message = fired, preventDefault=True }) isKey)
 
 
 {-| -}
@@ -2178,7 +2191,7 @@ focusedOnLoad =
 {- Style Defaults -}
 
 
-defaultTextBoxStyle : List (Attribute msg)
+defaultTextBoxStyle : Array (Attribute msg)
 defaultTextBoxStyle =
     [ defaultTextPadding
     , Border.rounded 3
@@ -2220,7 +2233,7 @@ defaultCheckbox checked =
             else
                 Element.rgb (211 / 255) (211 / 255) (211 / 255)
         , Border.shadow
-            { offset = ( 0, 0 )
+            { offset = { x=0, y=0 }
             , blur = 1
             , size = 1
             , color =
@@ -2247,7 +2260,7 @@ defaultCheckbox checked =
                 [ Border.color white
                 , Element.height (Element.px 6)
                 , Element.width (Element.px 9)
-                , Element.rotate (degrees -45)
+                , Element.rotate (Math.degrees -45)
                 , Element.centerX
                 , Element.centerY
                 , Element.moveUp 1

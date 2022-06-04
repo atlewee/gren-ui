@@ -137,7 +137,7 @@ type alias Coords =
 
 screenCoords : Json.Decoder Coords
 screenCoords =
-    Json.map2 Coords
+    Json.map2 (\x y->{x=x,y=y})
         (Json.field "screenX" Json.int)
         (Json.field "screenY" Json.int)
 
@@ -145,14 +145,14 @@ screenCoords =
 {-| -}
 localCoords : Json.Decoder Coords
 localCoords =
-    Json.map2 Coords
+    Json.map2 (\x y->{x=x,y=y})
         (Json.field "offsetX" Json.int)
         (Json.field "offsetY" Json.int)
 
 
 pageCoords : Json.Decoder Coords
 pageCoords =
-    Json.map2 Coords
+    Json.map2 (\x y->{x=x,y=y})
         (Json.field "pageX" Json.int)
         (Json.field "pageY" Json.int)
 

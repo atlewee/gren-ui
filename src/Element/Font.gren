@@ -5,7 +5,7 @@ module Element.Font exposing
     , alignLeft, alignRight, center, justify, letterSpacing, wordSpacing
     , underline, strike, italic, unitalicized
     , heavy, extraBold, bold, semiBold, medium, regular, light, extraLight, hairline
-    , Variant, variant, variantList, smallCaps, slashedZero, ligatures, ordinal, tabularNumbers, stackedFractions, diagonalFractions, swash, feature, indexed
+    , Variant, variant, variantArray, smallCaps, slashedZero, ligatures, ordinal, tabularNumbers, stackedFractions, diagonalFractions, swash, feature, indexed
     , glow, shadow
     )
 
@@ -56,7 +56,7 @@ module Element.Font exposing
 
 ## Variants
 
-@docs Variant, variant, variantList, smallCaps, slashedZero, ligatures, ordinal, tabularNumbers, stackedFractions, diagonalFractions, swash, feature, indexed
+@docs Variant, variant, variantArray, smallCaps, slashedZero, ligatures, ordinal, tabularNumbers, stackedFractions, diagonalFractions, swash, feature, indexed
 
 
 ## Shadows
@@ -103,12 +103,12 @@ color fontColor =
             (text "")
 
 -}
-family : List Font -> Attribute msg
+family : Array Font -> Attribute msg
 family families =
     Internal.StyleClass
         Flag.fontFamily
         (Internal.FontFamily
-            (List.foldl Internal.renderFontClassName "ff-" families)
+            (Array.foldl Internal.renderFontClassName "ff-" families)
             families
         )
 
@@ -150,7 +150,7 @@ type alias Adjustment =
 with :
     { name : String
     , adjustment : Maybe Adjustment
-    , variants : List Variant
+    , variants : Array Variant
     }
     -> Font
 with =
@@ -339,7 +339,7 @@ unitalicized =
 
 {-| -}
 shadow :
-    { offset : ( Float, Float )
+    { offset : {x: Float, y: Float }
     , blur : Float
     , color : Color
     }
@@ -355,7 +355,7 @@ glow : Color -> Float -> Attr decorative msg
 glow clr i =
     let
         shade =
-            { offset = ( 0, 0 )
+            { offset = {x= 0, y=0 }
             , blur = i * 2
             , color = clr
             }
@@ -380,7 +380,7 @@ type alias Variant =
         ]
         (text "rendered with smallCaps")
 
-**Note** These will **not** stack. If you want multiple variants, you should use `Font.variantList`.
+**Note** These will **not** stack. If you want multiple variants, you should use `Font.variantArray`.
 
 -}
 variant : Variant -> Attribute msg
@@ -409,26 +409,26 @@ isSmallCaps x =
 
 
 {-| -}
-variantList : List Variant -> Attribute msg
-variantList vars =
+variantArray : Array Variant -> Attribute msg
+variantArray vars =
     let
         features =
             vars
-                |> List.map Internal.renderVariant
+                |> Array.map Internal.renderVariant
 
         hasSmallCaps =
-            List.any isSmallCaps vars
+            Array.any isSmallCaps vars
 
         name =
             if hasSmallCaps then
                 vars
-                    |> List.map Internal.variantName
+                    |> Array.map Internal.variantName
                     |> String.join "-"
                     |> (\x -> x ++ "-sc")
 
             else
                 vars
-                    |> List.map Internal.variantName
+                    |> Array.map Internal.variantName
                     |> String.join "-"
 
         featureString =

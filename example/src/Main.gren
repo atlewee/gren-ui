@@ -1,0 +1,40 @@
+module Main exposing (..)
+
+import Element exposing (..)
+import Element.Background as Background
+import Element.Font as Font
+
+main = 
+    layout [] <|
+        column 
+            [ width fill
+            , height fill
+            , inFront theThingInFrontOfApp
+            ] 
+            [ topBar
+            , el [ centerX, centerY ] (text "Hello gren-ui")
+            ]
+
+
+topBar = 
+    row 
+        [ width fill
+        , paddingXY 16 12 
+        , Background.color (rgb 0.5 0.5 0.5)
+        , Font.color (rgb 1 1 1)
+        ] 
+        [ text "Top bar"
+        , el [ alignRight ] (text "X") 
+        ]  
+
+
+theThingInFrontOfApp = 
+    el 
+        [ explain Debug.todo
+        , padding 10 
+        , centerX
+        , moveLeft 60
+        , moveDown 20
+        , rotate 0.25
+        ] 
+        (text "I'm inFront")
