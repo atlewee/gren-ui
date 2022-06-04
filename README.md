@@ -9,3 +9,8 @@ This port is only to test out gren-lang.
 This is a port of elm-ui 1.1.8 and will not get updated.
 
 My hope is that mdgriffith creates gren-ui 2.0   :)
+
+
+Install instructions:
+
+gren install atlewee/gren-ui
