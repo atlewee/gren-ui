@@ -115,12 +115,13 @@ import Internal.Style exposing (classes, dot)
 import Json.Encode as Encode
 import Set exposing (Set)
 import VirtualDom
+import Math
 
 
 type Element msg
     = Unstyled (LayoutContext -> VirtualDom.Node msg)
     | Styled
-        { styles : List Style
+        { styles : Array Style
         , html : EmbedStyle -> LayoutContext -> VirtualDom.Node msg
         }
     | Text String
@@ -129,8 +130,8 @@ type Element msg
 
 type EmbedStyle
     = NoStyleSheet
-    | StaticRootAndDynamic OptionRecord (List Style)
-    | OnlyDynamic OptionRecord (List Style)
+    | StaticRootAndDynamic OptionRecord (Array Style)
+    | OnlyDynamic OptionRecord (Array Style)
 
 
 noStyleSheet : EmbedStyle
@@ -165,9 +166,9 @@ type VAlign
 
 
 type Style
-    = Style String (List Property)
+    = Style String (Array Property)
       --       class  prop   val
-    | FontFamily String (List Font)
+    | FontFamily String (Array Font)
     | FontSize Int
       -- classname, prop, value
     | Single String String String
@@ -176,9 +177,9 @@ type Style
     | BorderWidth String Int Int Int Int
     | PaddingStyle String Float Float Float Float
     | GridTemplateStyle
-        { spacing : ( Length, Length )
-        , columns : List Length
-        , rows : List Length
+        { spacing : {x: Length, y: Length }
+        , columns : Array Length
+        , rows : Array Length
         }
     | GridPosition
         { row : Int
@@ -187,7 +188,7 @@ type Style
         , height : Int
         }
     | Transform Transformation
-    | PseudoSelector PseudoClass (List Style)
+    | PseudoSelector PseudoClass (Array Style)
     | Transparency String Float
     | Shadows String String
 
@@ -223,7 +224,7 @@ type Font
     | FontWith
         { name : String
         , adjustment : Maybe Adjustment
-        , variants : List Variant
+        , variants : Array Variant
         }
 
 
@@ -260,7 +261,7 @@ variantName var =
 renderVariants typeface =
     case typeface of
         FontWith font ->
-            Just (String.join ", " (List.map renderVariant font.variants))
+            Just (String.join ", " (Array.map renderVariant font.variants))
 
         _ ->
             Nothing
@@ -281,7 +282,7 @@ isSmallCaps var =
 hasSmallCaps typeface =
     case typeface of
         FontWith font ->
-            List.any isSmallCaps font.variants
+            Array.any isSmallCaps font.variants
 
         _ ->
             False
@@ -292,7 +293,7 @@ type Property
 
 
 type alias XYZ =
-    ( Float, Float, Float )
+    {x:Float, y:Float, z:Float}
 
 
 type alias Angle =
@@ -374,9 +375,9 @@ type NodeName
 
 type NearbyChildren msg
     = NoNearbyChildren
-    | ChildrenBehind (List (Html.Html msg))
-    | ChildrenInFront (List (Html.Html msg))
-    | ChildrenBehindAndInFront (List (Html.Html msg)) (List (Html.Html msg))
+    | ChildrenBehind (Array (Html.Html msg))
+    | ChildrenInFront (Array (Html.Html msg))
+    | ChildrenBehindAndInFront (Array (Html.Html msg)) (Array (Html.Html msg))
 
 
 div =
@@ -385,8 +386,8 @@ div =
 
 type alias Gathered msg =
     { node : NodeName
-    , attributes : List (VirtualDom.Attribute msg)
-    , styles : List Style
+    , attributes : Array (VirtualDom.Attribute msg)
+    , styles : Array Style
     , children : NearbyChildren msg
     , has : Flag.Field
     }
@@ -538,53 +539,50 @@ embedWith static opts styles children =
     let
         dynamicStyleSheet =
             styles
-                |> List.foldl reduceStyles ( Set.empty, renderFocusStyle opts.focus )
-                |> Tuple.second
+                |> Array.foldl reduceStyles { cache = Set.empty, existing = renderFocusStyle opts.focus }
+                |> .existing
                 -- |> reduceStylesRecursive Set.empty [ ]) --renderFocusStyle opts.focus ]
                 -- |> sortedReduce
                 |> toStyleSheet opts
     in
     if static then
-        staticRoot opts
-            :: dynamicStyleSheet
-            :: children
+        Array.prefix 
+            [ staticRoot opts
+            , dynamicStyleSheet
+            ]
+            children
 
     else
-        dynamicStyleSheet
-            :: children
+        Array.pushFirst dynamicStyleSheet children
 
 
 embedKeyed static opts styles children =
     let
         dynamicStyleSheet =
             styles
-                |> List.foldl reduceStyles ( Set.empty, renderFocusStyle opts.focus )
-                |> Tuple.second
+                |> Array.foldl reduceStyles { cache = Set.empty, existing = renderFocusStyle opts.focus }
                 -- |> reduceStylesRecursive Set.empty [ ]) --renderFocusStyle opts.focus ]
                 -- |> sortedReduce
-                |> toStyleSheet opts
+                |> (\{existing} -> toStyleSheet opts existing)
     in
-    if static then
-        ( "static-stylesheet", staticRoot opts )
-            :: ( "dynamic-stylesheet"
-               , dynamicStyleSheet
-               )
-            :: children
+    if static then 
+        Array.prefix 
+            [ { key = "static-stylesheet", node = staticRoot opts }
+            , { key = "dynamic-stylesheet", node = dynamicStyleSheet }
+            ]
+            children
 
     else
-        ( "dynamic-stylesheet"
-        , dynamicStyleSheet
-        )
-            :: children
+        Array.pushFirst { key = "dynamic-stylesheet", node = dynamicStyleSheet } children
 
 
-reduceStylesRecursive : Set String -> List Style -> List Style -> List Style
+reduceStylesRecursive : Set String -> Array Style -> Array Style -> Array Style
 reduceStylesRecursive cache found styles =
-    case styles of
-        [] ->
+    case Array.popFirst styles of
+        Nothing ->
             found
 
-        head :: remaining ->
+        Just { first=head, rest=remaining } ->
             let
                 styleName =
                     getStyleName head
@@ -593,11 +591,11 @@ reduceStylesRecursive cache found styles =
                 reduceStylesRecursive cache found remaining
 
             else
-                reduceStylesRecursive (Set.insert styleName cache) (head :: found) remaining
+                reduceStylesRecursive (Set.insert styleName cache) (Array.pushFirst head found) remaining
 
 
-reduceStyles : Style -> ( Set String, List Style ) -> ( Set String, List Style )
-reduceStyles style (( cache, existing ) as nevermind) =
+reduceStyles : Style -> {cache: Set String, existing: Array Style } -> {cache: Set String, existing: Array Style }
+reduceStyles style ({ cache, existing } as nevermind) =
     let
         styleName =
             getStyleName style
@@ -606,50 +604,56 @@ reduceStyles style (( cache, existing ) as nevermind) =
         nevermind
 
     else
-        ( Set.insert styleName cache
-        , style :: existing
-        )
+        { cache = Set.insert styleName cache
+        , existing = Array.pushFirst style existing
+        }
 
 
+sortedReduce : Array Style -> Array Style
 sortedReduce styles =
     styles
-        -- |> List.map (\x -> ( getStyleName x, x ))
-        |> List.sortBy getStyleName
+        |> Array.sortBy getStyleName
         |> reduceRecursiveCalcName []
 
 
-reduceRecursiveCalcName : List Style -> List Style -> List Style
+reduceRecursiveCalcName : Array Style -> Array Style -> Array Style
 reduceRecursiveCalcName found styles =
-    case styles of
-        [] ->
+    case Array.popFirst styles of
+        Nothing ->
             found
 
-        headOfList :: [] ->
-            headOfList :: found
+        Just { first=headOfArray,rest=rest } -> 
+            case Array.popFirst rest of 
+                Nothing -> 
+                    Array.pushFirst headOfArray found
 
-        headOfList :: other :: remaining ->
-            if headOfList /= other then
-                reduceRecursiveCalcName (headOfList :: found) (other :: remaining)
+                Just {first=other,rest=remaining} -> 
+                        if headOfArray /= other then
+                            reduceRecursiveCalcName (Array.pushFirst headOfArray found) (Array.pushFirst other remaining)
 
-            else
-                reduceRecursiveCalcName found (other :: remaining)
+                        else
+                            reduceRecursiveCalcName found (Array.pushFirst other remaining)
 
 
-reduceRecursive : List Style -> List ( String, Style ) -> List Style
+reduceRecursive : Array Style -> Array { key: String, style: Style } -> Array Style
 reduceRecursive found styles =
-    case styles of
-        [] ->
+    case Array.popFirst styles of
+        Nothing ->
             found
 
-        ( _, headOfList ) :: [] ->
-            headOfList :: found
+        Just { first=headOfArray,rest } ->
+            if Array.isEmpty rest then 
+                Array.pushFirst headOfArray.style found
+            else 
+                case Array.popFirst rest of 
+                    Nothing -> 
+                        reduceRecursive found rest
+                    Just {first=other,rest=remaining} -> 
+                            if headOfArray.key /= other.key then
+                                reduceRecursive (Array.pushFirst headOfArray.style found) (Array.pushFirst other remaining)
 
-        ( headOfListName, headOfList ) :: ( otherName, other ) :: remaining ->
-            if headOfListName /= otherName then
-                reduceRecursive (headOfList :: found) (( otherName, other ) :: remaining)
-
-            else
-                reduceRecursive found (( otherName, other ) :: remaining)
+                            else
+                                reduceRecursive found (Array.pushFirst other remaining)
 
 
 addNodeName : String -> NodeName -> NodeName
@@ -696,7 +700,7 @@ transformClass transform =
         Untransformed ->
             Nothing
 
-        Moved ( x, y, z ) ->
+        Moved { x, y, z } ->
             Just <|
                 "mv-"
                     ++ floatClass x
@@ -705,7 +709,7 @@ transformClass transform =
                     ++ "-"
                     ++ floatClass z
 
-        FullTransform ( tx, ty, tz ) ( sx, sy, sz ) ( ox, oy, oz ) angle ->
+        FullTransform {x=tx, y=ty, z=tz} {x=sx, y=sy, z=sz}  {x=ox, y=oy, z=oz} angle ->
             Just <|
                 "tfrm-"
                     ++ floatClass tx
@@ -734,7 +738,7 @@ transformValue transform =
         Untransformed ->
             Nothing
 
-        Moved ( x, y, z ) ->
+        Moved { x, y, z } ->
             Just <|
                 "translate3d("
                     ++ String.fromFloat x
@@ -744,7 +748,7 @@ transformValue transform =
                     ++ String.fromFloat z
                     ++ "px)"
 
-        FullTransform ( tx, ty, tz ) ( sx, sy, sz ) ( ox, oy, oz ) angle ->
+        FullTransform { x=tx, y=ty, z=tz } {x=sx, y=sy, z=sz} {x=ox, y=oy, z=oz} angle ->
             let
                 translate =
                     "translate3d("
@@ -783,53 +787,53 @@ composeTransformation transform component =
         Untransformed ->
             case component of
                 MoveX x ->
-                    Moved ( x, 0, 0 )
+                    Moved {x=x, y=0, z=0 }
 
                 MoveY y ->
-                    Moved ( 0, y, 0 )
+                    Moved {x=0, y=y, z=0 }
 
                 MoveZ z ->
-                    Moved ( 0, 0, z )
+                    Moved {x=0, y=0, z=z }
 
                 MoveXYZ xyz ->
                     Moved xyz
 
                 Rotate xyz angle ->
-                    FullTransform ( 0, 0, 0 ) ( 1, 1, 1 ) xyz angle
+                    FullTransform {x=0, y=0, z=0} {x=1, y=1, z=1} xyz angle
 
                 Scale xyz ->
-                    FullTransform ( 0, 0, 0 ) xyz ( 0, 0, 1 ) 0
+                    FullTransform {x=0, y=0, z=0} xyz {x=0, y=0, z=1} 0
 
-        Moved (( x, y, z ) as moved) ->
+        Moved ({x, y, z} as moved) ->
             case component of
                 MoveX newX ->
-                    Moved ( newX, y, z )
+                    Moved {x=newX, y=y, z=z}
 
                 MoveY newY ->
-                    Moved ( x, newY, z )
+                    Moved {x=x, y=newY, z=z}
 
                 MoveZ newZ ->
-                    Moved ( x, y, newZ )
+                    Moved {x=x, y=y, z=newZ}
 
                 MoveXYZ xyz ->
                     Moved xyz
 
                 Rotate xyz angle ->
-                    FullTransform moved ( 1, 1, 1 ) xyz angle
+                    FullTransform moved {x=1, y=1, z=1} xyz angle
 
                 Scale scale ->
-                    FullTransform moved scale ( 0, 0, 1 ) 0
+                    FullTransform moved scale {x=0, y=0, z=1} 0
 
-        FullTransform (( x, y, z ) as moved) scaled origin angle ->
+        FullTransform ({x, y, z} as moved) scaled origin angle ->
             case component of
                 MoveX newX ->
-                    FullTransform ( newX, y, z ) scaled origin angle
+                    FullTransform {x=newX, y=y, z=z} scaled origin angle
 
                 MoveY newY ->
-                    FullTransform ( x, newY, z ) scaled origin angle
+                    FullTransform {x=x, y=newY, z=z} scaled origin angle
 
                 MoveZ newZ ->
-                    FullTransform ( x, y, newZ ) scaled origin angle
+                    FullTransform {x=x, y=y, z=newZ} scaled origin angle
 
                 MoveXYZ newMove ->
                     FullTransform newMove scaled origin angle
@@ -894,17 +898,17 @@ gatherAttrRecursive :
     -> NodeName
     -> Flag.Field
     -> Transformation
-    -> List Style
-    -> List (VirtualDom.Attribute msg)
+    -> Array Style
+    -> Array (VirtualDom.Attribute msg)
     -> NearbyChildren msg
-    -> List (Attribute aligned msg)
+    -> Array (Attribute aligned msg)
     -> Gathered msg
 gatherAttrRecursive classes node has transform styles attrs children elementAttrs =
-    case elementAttrs of
-        [] ->
+    case Array.popFirst elementAttrs of
+        Nothing ->
             case transformClass transform of
                 Nothing ->
-                    { attributes = Html.Attributes.class classes :: attrs
+                    { attributes = Array.pushFirst (Html.Attributes.class classes) attrs
                     , styles = styles
                     , node = node
                     , children = children
@@ -912,14 +916,14 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
                     }
 
                 Just class ->
-                    { attributes = Html.Attributes.class (classes ++ " " ++ class) :: attrs
-                    , styles = Transform transform :: styles
+                    { attributes = Array.pushFirst (Html.Attributes.class (classes ++ " " ++ class)) attrs
+                    , styles = Array.pushFirst (Transform transform) styles
                     , node = node
                     , children = children
                     , has = has
                     }
 
-        attribute :: remaining ->
+        Just {first=attribute, rest=remaining} ->
             case attribute of
                 NoAttribute ->
                     gatherAttrRecursive classes node has transform styles attrs children remaining
@@ -932,7 +936,7 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
                         gatherAttrRecursive (exactClassName ++ " " ++ classes) node (Flag.add flag has) transform styles attrs children remaining
 
                 Attr actualAttribute ->
-                    gatherAttrRecursive classes node has transform styles (actualAttribute :: attrs) children remaining
+                    gatherAttrRecursive classes node has transform styles (Array.pushFirst actualAttribute attrs) children remaining
 
                 StyleClass flag style ->
                     if Flag.present flag has then
@@ -953,7 +957,7 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
                             node
                             (Flag.add flag has)
                             transform
-                            (style :: styles)
+                            (Array.pushFirst style styles)
                             attrs
                             children
                             remaining
@@ -979,7 +983,10 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
                                     node
                                     (Flag.add Flag.width has)
                                     transform
-                                    (Single ("width-px-" ++ String.fromInt px) "width" (String.fromInt px ++ "px") :: styles)
+                                    (Array.pushFirst 
+                                        (Single ("width-px-" ++ String.fromInt px) "width" (String.fromInt px ++ "px")) 
+                                        styles
+                                    )
                                     attrs
                                     children
                                     remaining
@@ -1010,16 +1017,18 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
                                         node
                                         (Flag.add Flag.widthFill (Flag.add Flag.width has))
                                         transform
-                                        (Single
-                                            (Internal.Style.classes.any
-                                                ++ "."
-                                                ++ Internal.Style.classes.row
-                                                ++ " > "
-                                                ++ (Internal.Style.dot <| "width-fill-" ++ String.fromInt portion)
+                                        (Array.pushFirst 
+                                            (Single
+                                                (Internal.Style.classes.any
+                                                    ++ "."
+                                                    ++ Internal.Style.classes.row
+                                                    ++ " > "
+                                                    ++ (Internal.Style.dot <| "width-fill-" ++ String.fromInt portion)
+                                                )
+                                                "flex-grow"
+                                                (String.fromInt (portion * 100000))
                                             )
-                                            "flex-grow"
-                                            (String.fromInt (portion * 100000))
-                                            :: styles
+                                            styles
                                         )
                                         attrs
                                         children
@@ -1027,12 +1036,12 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
 
                             _ ->
                                 let
-                                    ( addToFlags, newClass, newStyles ) =
+                                    {newFlag, newAttrs, newStyles} =
                                         renderWidth width
                                 in
-                                gatherAttrRecursive (classes ++ " " ++ newClass)
+                                gatherAttrRecursive (classes ++ " " ++ newAttrs)
                                     node
-                                    (Flag.merge addToFlags (Flag.add Flag.width has))
+                                    (Flag.merge newFlag (Flag.add Flag.width has))
                                     transform
                                     (newStyles ++ styles)
                                     attrs
@@ -1057,7 +1066,7 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
                                     node
                                     (Flag.add Flag.height has)
                                     transform
-                                    (Single name "height " val :: styles)
+                                    (Array.pushFirst (Single name "height " val) styles)
                                     attrs
                                     children
                                     remaining
@@ -1088,16 +1097,18 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
                                         node
                                         (Flag.add Flag.heightFill (Flag.add Flag.height has))
                                         transform
-                                        (Single
-                                            (Internal.Style.classes.any
-                                                ++ "."
-                                                ++ Internal.Style.classes.column
-                                                ++ " > "
-                                                ++ (Internal.Style.dot <| "height-fill-" ++ String.fromInt portion)
-                                            )
-                                            "flex-grow"
-                                            (String.fromInt (portion * 100000))
-                                            :: styles
+                                        (Array.pushFirst 
+                                            (Single
+                                                (Internal.Style.classes.any
+                                                    ++ "."
+                                                    ++ Internal.Style.classes.column
+                                                    ++ " > "
+                                                    ++ (Internal.Style.dot <| "height-fill-" ++ String.fromInt portion)
+                                                )
+                                                "flex-grow"
+                                                (String.fromInt (portion * 100000))
+                                                )
+                                                styles
                                         )
                                         attrs
                                         children
@@ -1105,12 +1116,12 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
 
                             _ ->
                                 let
-                                    ( addToFlags, newClass, newStyles ) =
+                                    {newFlag, newAttrs, newStyles} =
                                         renderHeight height
                                 in
-                                gatherAttrRecursive (classes ++ " " ++ newClass)
+                                gatherAttrRecursive (classes ++ " " ++ newAttrs)
                                     node
-                                    (Flag.merge addToFlags (Flag.add Flag.height has))
+                                    (Flag.merge newFlag (Flag.add Flag.height has))
                                     transform
                                     (newStyles ++ styles)
                                     attrs
@@ -1159,16 +1170,16 @@ gatherAttrRecursive classes node has transform styles attrs children elementAttr
                                 remaining
 
                         Button ->
-                            gatherAttrRecursive classes node has transform styles (VirtualDom.attribute "role" "button" :: attrs) children remaining
+                            gatherAttrRecursive classes node has transform styles (Array.pushFirst (VirtualDom.attribute "role" "button") attrs) children remaining
 
                         Label label ->
-                            gatherAttrRecursive classes node has transform styles (VirtualDom.attribute "aria-label" label :: attrs) children remaining
+                            gatherAttrRecursive classes node has transform styles (Array.pushFirst (VirtualDom.attribute "aria-label" label) attrs) children remaining
 
                         LivePolite ->
-                            gatherAttrRecursive classes node has transform styles (VirtualDom.attribute "aria-live" "polite" :: attrs) children remaining
+                            gatherAttrRecursive classes node has transform styles (Array.pushFirst (VirtualDom.attribute "aria-live" "polite") attrs) children remaining
 
                         LiveAssertive ->
-                            gatherAttrRecursive classes node has transform styles (VirtualDom.attribute "aria-live" "assertive" :: attrs) children remaining
+                            gatherAttrRecursive classes node has transform styles (Array.pushFirst (VirtualDom.attribute "aria-live" "assertive") attrs) children remaining
 
                 Nearby location elem ->
                     let
@@ -1267,7 +1278,7 @@ addNearbyElement location elem existing =
         ChildrenBehind existingBehind ->
             case location of
                 Behind ->
-                    ChildrenBehind (nearby :: existingBehind)
+                    ChildrenBehind (Array.pushFirst nearby existingBehind)
 
                 _ ->
                     ChildrenBehindAndInFront existingBehind [ nearby ]
@@ -1278,15 +1289,15 @@ addNearbyElement location elem existing =
                     ChildrenBehindAndInFront [ nearby ] existingInFront
 
                 _ ->
-                    ChildrenInFront (nearby :: existingInFront)
+                    ChildrenInFront (Array.pushFirst nearby existingInFront)
 
         ChildrenBehindAndInFront existingBehind existingInFront ->
             case location of
                 Behind ->
-                    ChildrenBehindAndInFront (nearby :: existingBehind) existingInFront
+                    ChildrenBehindAndInFront (Array.pushFirst nearby existingBehind) existingInFront
 
                 _ ->
-                    ChildrenBehindAndInFront existingBehind (nearby :: existingInFront)
+                    ChildrenBehindAndInFront existingBehind (Array.pushFirst nearby existingInFront)
 
 
 nearbyElement location elem =
@@ -1353,28 +1364,28 @@ nearbyElement location elem =
 renderWidth w =
     case w of
         Px px ->
-            ( Flag.none
-            , Internal.Style.classes.widthExact ++ " width-px-" ++ String.fromInt px
-            , [ Single ("width-px-" ++ String.fromInt px) "width" (String.fromInt px ++ "px") ]
-            )
+            { newFlag = Flag.none
+            , newAttrs = Internal.Style.classes.widthExact ++ " width-px-" ++ String.fromInt px
+            , newStyles = [ Single ("width-px-" ++ String.fromInt px) "width" (String.fromInt px ++ "px") ]
+            }
 
         Content ->
-            ( Flag.add Flag.widthContent Flag.none
-            , Internal.Style.classes.widthContent
-            , []
-            )
+            { newFlag = Flag.add Flag.widthContent Flag.none
+            , newAttrs = Internal.Style.classes.widthContent
+            , newStyles = []
+            }
 
         Fill portion ->
             if portion == 1 then
-                ( Flag.add Flag.widthFill Flag.none
-                , Internal.Style.classes.widthFill
-                , []
-                )
+                { newFlag = Flag.add Flag.widthFill Flag.none
+                , newAttrs = Internal.Style.classes.widthFill
+                , newStyles = []
+                }
 
             else
-                ( Flag.add Flag.widthFill Flag.none
-                , Internal.Style.classes.widthFillPortion ++ " width-fill-" ++ String.fromInt portion
-                , [ Single
+                { newFlag = Flag.add Flag.widthFill Flag.none
+                , newAttrs = Internal.Style.classes.widthFillPortion ++ " width-fill-" ++ String.fromInt portion
+                , newStyles = [ Single
                         (Internal.Style.classes.any
                             ++ "."
                             ++ Internal.Style.classes.row
@@ -1384,7 +1395,7 @@ renderWidth w =
                         "flex-grow"
                         (String.fromInt (portion * 100000))
                   ]
-                )
+                }
 
         Min minSize len ->
             let
@@ -1398,13 +1409,13 @@ renderWidth w =
                         "min-width"
                         (String.fromInt minSize ++ "px")
 
-                ( newFlag, newAttrs, newStyle ) =
+                { newFlag, newAttrs, newStyles } =
                     renderWidth len
             in
-            ( Flag.add Flag.widthBetween newFlag
-            , cls ++ " " ++ newAttrs
-            , style :: newStyle
-            )
+            { newFlag =  Flag.add Flag.widthBetween newFlag
+            , newAttrs = cls ++ " " ++ newAttrs
+            , newStyles = Array.pushFirst style newStyles
+            }
 
         Max maxSize len ->
             let
@@ -1416,13 +1427,13 @@ renderWidth w =
                         "max-width"
                         (String.fromInt maxSize ++ "px")
 
-                ( newFlag, newAttrs, newStyle ) =
+                { newFlag, newAttrs, newStyles } =
                     renderWidth len
             in
-            ( Flag.add Flag.widthBetween newFlag
-            , cls ++ " " ++ newAttrs
-            , style :: newStyle
-            )
+            { newFlag = Flag.add Flag.widthBetween newFlag
+            , newAttrs = cls ++ " " ++ newAttrs
+            , newStyles = Array.pushFirst style newStyles
+            }
 
 
 renderHeight h =
@@ -1435,28 +1446,28 @@ renderHeight h =
                 name =
                     "height-px-" ++ val
             in
-            ( Flag.none
-            , Internal.Style.classes.heightExact ++ " " ++ name
-            , [ Single name "height" (val ++ "px") ]
-            )
+            { newFlag = Flag.none
+            , newAttrs = Internal.Style.classes.heightExact ++ " " ++ name
+            , newStyles = [ Single name "height" (val ++ "px") ]
+            }
 
         Content ->
-            ( Flag.add Flag.heightContent Flag.none
-            , Internal.Style.classes.heightContent
-            , []
-            )
+            { newFlag = Flag.add Flag.heightContent Flag.none
+            , newAttrs = Internal.Style.classes.heightContent
+            , newStyles = []
+            }
 
         Fill portion ->
             if portion == 1 then
-                ( Flag.add Flag.heightFill Flag.none
-                , Internal.Style.classes.heightFill
-                , []
-                )
+                { newFlag = Flag.add Flag.heightFill Flag.none
+                , newAttrs = Internal.Style.classes.heightFill
+                , newStyles = []
+                }
 
             else
-                ( Flag.add Flag.heightFill Flag.none
-                , Internal.Style.classes.heightFillPortion ++ " height-fill-" ++ String.fromInt portion
-                , [ Single
+                { newFlag = Flag.add Flag.heightFill Flag.none
+                , newAttrs = Internal.Style.classes.heightFillPortion ++ " height-fill-" ++ String.fromInt portion
+                , newStyles = [ Single
                         (Internal.Style.classes.any
                             ++ "."
                             ++ Internal.Style.classes.column
@@ -1466,7 +1477,7 @@ renderHeight h =
                         "flex-grow"
                         (String.fromInt (portion * 100000))
                   ]
-                )
+                }
 
         Min minSize len ->
             let
@@ -1482,13 +1493,13 @@ renderHeight h =
                         -- to correct for safari's incorrect implementation of flexbox.
                         (String.fromInt minSize ++ "px !important")
 
-                ( newFlag, newAttrs, newStyle ) =
+                { newFlag, newAttrs, newStyles } =
                     renderHeight len
             in
-            ( Flag.add Flag.heightBetween newFlag
-            , cls ++ " " ++ newAttrs
-            , style :: newStyle
-            )
+            { newFlag = Flag.add Flag.heightBetween newFlag
+            , newAttrs = cls ++ " " ++ newAttrs
+            , newStyles = Array.pushFirst style newStyles
+            }
 
         Max maxSize len ->
             let
@@ -1500,13 +1511,13 @@ renderHeight h =
                         "max-height"
                         (String.fromInt maxSize ++ "px")
 
-                ( newFlag, newAttrs, newStyle ) =
+                { newFlag, newAttrs, newStyles } =
                     renderHeight len
             in
-            ( Flag.add Flag.heightBetween newFlag
-            , cls ++ " " ++ newAttrs
-            , style :: newStyle
-            )
+            { newFlag = Flag.add Flag.heightBetween newFlag
+            , newAttrs = cls ++ " " ++ newAttrs
+            , newStyles = Array.pushFirst style newStyles
+            }
 
 
 rowClass =
@@ -1554,10 +1565,10 @@ contextClasses context =
             pageClass
 
 
-element : LayoutContext -> NodeName -> List (Attribute aligned msg) -> Children (Element msg) -> Element msg
+element : LayoutContext -> NodeName -> Array (Attribute aligned msg) -> Children (Element msg) -> Element msg
 element context node attributes children =
     attributes
-        |> List.reverse
+        |> Array.reverse
         |> gatherAttrRecursive (contextClasses context) node Flag.none untransformed [] [] NoNearbyChildren
         |> createElement context children
 
@@ -1569,37 +1580,37 @@ untransformed =
 createElement : LayoutContext -> Children (Element msg) -> Gathered msg -> Element msg
 createElement context children rendered =
     let
-        gather child ( htmls, existingStyles ) =
+        gather child {unkeyed=htmls, styles=existingStyles} =
             case child of
                 Unstyled html ->
                     if context == asParagraph then
-                        ( html context :: htmls
-                        , existingStyles
-                        )
+                        { unkeyed = Array.pushFirst (html context) htmls
+                        , styles = existingStyles
+                        }
 
                     else
-                        ( html context :: htmls
-                        , existingStyles
-                        )
+                        { unkeyed = Array.pushFirst (html context) htmls
+                        , styles = existingStyles
+                        }
 
                 Styled styled ->
                     if context == asParagraph then
-                        ( styled.html NoStyleSheet context :: htmls
-                        , if List.isEmpty existingStyles then
+                        { unkeyed = Array.pushFirst (styled.html NoStyleSheet context) htmls
+                        , styles = if Array.isEmpty existingStyles then
                             styled.styles
 
                           else
                             styled.styles ++ existingStyles
-                        )
+                        }
 
                     else
-                        ( styled.html NoStyleSheet context :: htmls
-                        , if List.isEmpty existingStyles then
+                        { unkeyed = Array.pushFirst (styled.html NoStyleSheet context) htmls
+                        , styles = if Array.isEmpty existingStyles then
                             styled.styles
 
                           else
                             styled.styles ++ existingStyles
-                        )
+                        }
 
                 Text str ->
                     -- TEXT OPTIMIZATION
@@ -1625,51 +1636,52 @@ createElement context children rendered =
                     --     , existingStyles
                     --     )
                     -- else
-                    ( (if context == asEl then
-                        textElementFill str
+                    { unkeyed = 
+                        Array.pushFirst 
+                            ( if context == asEl then
+                                textElementFill str
 
-                       else
-                        textElement str
-                      )
-                        :: htmls
-                    , existingStyles
-                    )
+                            else
+                                textElement str
+                            )
+                            htmls
+                    , styles = existingStyles
+                    }
 
                 Empty ->
-                    ( htmls, existingStyles )
+                    { unkeyed = htmls, styles = existingStyles }
 
-        gatherKeyed ( key, child ) ( htmls, existingStyles ) =
-            case child of
+        gatherKeyed {key,node} {keyed=htmls, styles=existingStyles} =
+            case node of
                 Unstyled html ->
                     if context == asParagraph then
-                        ( ( key, html context ) :: htmls
-                        , existingStyles
-                        )
+                        { keyed =  Array.pushFirst {key=key, node=html context} htmls
+                        , styles = existingStyles
+                        }
 
                     else
-                        ( ( key, html context ) :: htmls
-                        , existingStyles
-                        )
+                        { keyed =  Array.pushFirst {key=key, node=html context} htmls
+                        , styles = existingStyles
+                        }
 
                 Styled styled ->
                     if context == asParagraph then
-                        ( ( key, styled.html NoStyleSheet context )
-                            :: htmls
-                        , if List.isEmpty existingStyles then
+                        { keyed = Array.pushFirst { key=key, node = styled.html NoStyleSheet context } htmls
+                        , styles = if Array.isEmpty existingStyles then
                             styled.styles
 
                           else
                             styled.styles ++ existingStyles
-                        )
+                        }
 
                     else
-                        ( ( key, styled.html NoStyleSheet context ) :: htmls
-                        , if List.isEmpty existingStyles then
+                        { keyed = Array.pushFirst { key=key, node = styled.html NoStyleSheet context } htmls
+                        , styles = if Array.isEmpty existingStyles then
                             styled.styles
 
                           else
                             styled.styles ++ existingStyles
-                        )
+                        }
 
                 Text str ->
                     -- TEXT OPTIMIZATION
@@ -1689,27 +1701,28 @@ createElement context children rendered =
                     --     , existingStyles
                     --     )
                     -- else
-                    ( ( key
-                      , if context == asEl then
-                            textElementFill str
-
-                        else
-                            textElement str
-                      )
-                        :: htmls
-                    , existingStyles
-                    )
+                    { keyed = Array.pushFirst 
+                        { key = key
+                        , node = 
+                            if context == asEl then
+                                textElementFill str
+                            else
+                                textElement str
+                        }
+                        htmls
+                    , styles = existingStyles
+                    }
 
                 Empty ->
-                    ( htmls, existingStyles )
+                    { keyed = htmls, styles = existingStyles }
     in
     case children of
         Keyed keyedChildren ->
-            case List.foldr gatherKeyed ( [], [] ) keyedChildren of
-                ( keyed, styles ) ->
+            case Array.foldr gatherKeyed { keyed = [], styles = [] } keyedChildren of
+                {keyed, styles} ->
                     let
                         newStyles =
-                            if List.isEmpty styles then
+                            if Array.isEmpty styles then
                                 rendered.styles
 
                             else
@@ -1741,11 +1754,11 @@ createElement context children rendered =
                                 }
 
         Unkeyed unkeyedChildren ->
-            case List.foldr gather ( [], [] ) unkeyedChildren of
-                ( unkeyed, styles ) ->
+            case Array.foldr gather {unkeyed=[], styles=[]} unkeyedChildren of
+                {unkeyed, styles} ->
                     let
                         newStyles =
-                            if List.isEmpty styles then
+                            if Array.isEmpty styles then
                                 rendered.styles
 
                             else
@@ -1795,15 +1808,15 @@ addKeyedChildren key existing nearbyChildren =
             existing
 
         ChildrenBehind behind ->
-            List.map (\x -> ( key, x )) behind ++ existing
+            Array.map (\x -> {key=key, node=x}) behind ++ existing
 
         ChildrenInFront inFront ->
-            existing ++ List.map (\x -> ( key, x )) inFront
+            existing ++ Array.map (\x -> {key= key, node=x }) inFront
 
         ChildrenBehindAndInFront behind inFront ->
-            List.map (\x -> ( key, x )) behind
+            Array.map (\x -> {key= key, node=x }) behind
                 ++ existing
-                ++ List.map (\x -> ( key, x )) inFront
+                ++ Array.map (\x -> {key= key, node=x }) inFront
 
 
 unit =
@@ -1835,7 +1848,7 @@ staticRoot opts =
 
 addWhen ifThis x to =
     if ifThis then
-        x :: to
+        Array.pushFirst x to
 
     else
         to
@@ -1846,70 +1859,70 @@ addWhen ifThis x to =
 This doesn't reduce equivalent attributes completely.
 
 -}
-filter : List (Attribute aligned msg) -> List (Attribute aligned msg)
+filter : Array (Attribute aligned msg) -> Array (Attribute aligned msg)
 filter attrs =
-    Tuple.first <|
-        List.foldr
-            (\x ( found, has ) ->
+    .found <|
+        Array.foldr
+            (\x {found, has} ->
                 case x of
                     NoAttribute ->
-                        ( found, has )
+                        { found=found, has=has }
 
                     Class key _ ->
-                        ( x :: found, has )
+                        { found = Array.pushFirst x found, has = has }
 
                     Attr attr ->
-                        ( x :: found, has )
+                        { found = Array.pushFirst x found, has=has }
 
                     StyleClass _ style ->
-                        ( x :: found, has )
+                        { found = Array.pushFirst x found, has = has }
 
                     Width width ->
                         if Set.member "width" has then
-                            ( found, has )
+                            { found = found, has=has }
 
                         else
-                            ( x :: found, Set.insert "width" has )
+                            { found = Array.pushFirst x found, has = Set.insert "width" has }
 
                     Height height ->
                         if Set.member "height" has then
-                            ( found, has )
+                            { found =  found, has = has }
 
                         else
-                            ( x :: found, Set.insert "height" has )
+                            { found = Array.pushFirst x found, has = Set.insert "height" has }
 
                     Describe description ->
                         if Set.member "described" has then
-                            ( found, has )
+                            { found = found, has=has }
 
                         else
-                            ( x :: found, Set.insert "described" has )
+                            { found = Array.pushFirst x found, has = Set.insert "described" has }
 
                     Nearby location elem ->
-                        ( x :: found, has )
+                        { found = Array.pushFirst x  found, has = has }
 
                     AlignX _ ->
                         if Set.member "align-x" has then
-                            ( found, has )
+                            { found =  found, has = has }
 
                         else
-                            ( x :: found, Set.insert "align-x" has )
+                            { found = Array.pushFirst x  found, has = Set.insert "align-x" has }
 
                     AlignY _ ->
                         if Set.member "align-y" has then
-                            ( found, has )
+                            {found = found, has = has }
 
                         else
-                            ( x :: found, Set.insert "align-y" has )
+                            { found = Array.pushFirst x  found, has = Set.insert "align-y" has }
 
                     TransformComponent _ _ ->
                         if Set.member "transform" has then
-                            ( found, has )
+                            {found = found, has = has }
 
                         else
-                            ( x :: found, Set.insert "transform" has )
+                            { found = Array.pushFirst x found, has = Set.insert "transform" has }
             )
-            ( [], Set.empty )
+            { found = [], has = Set.empty }
             attrs
 
 
@@ -1928,14 +1941,14 @@ isContent len =
             False
 
 
-get : List (Attribute aligned msg) -> (Attribute aligned msg -> Bool) -> List (Attribute aligned msg)
+get : Array (Attribute aligned msg) -> (Attribute aligned msg -> Bool) -> Array (Attribute aligned msg)
 get attrs isAttr =
     attrs
         |> filter
-        |> List.foldr
+        |> Array.foldr
             (\x found ->
                 if isAttr x then
-                    x :: found
+                    Array.pushFirst x found
 
                 else
                     found
@@ -1951,42 +1964,44 @@ type Padding
     = Padding String Float Float Float Float
 
 
-extractSpacingAndPadding : List (Attribute aligned msg) -> ( Maybe Padding, Maybe Spacing )
+extractSpacingAndPadding : Array (Attribute aligned msg) -> { padding: Maybe Padding, spacing: Maybe Spacing }
 extractSpacingAndPadding attrs =
-    List.foldr
-        (\attr ( pad, spacing ) ->
-            ( case pad of
-                Just x ->
-                    pad
+    Array.foldr
+        (\attr {padding=pad,spacing=spacing} ->
+            { padding = 
+                case pad of
+                    Just x ->
+                        pad
 
-                Nothing ->
-                    case attr of
-                        StyleClass _ (PaddingStyle name t r b l) ->
-                            Just (Padding name t r b l)
+                    Nothing ->
+                        case attr of
+                            StyleClass _ (PaddingStyle name t r b l) ->
+                                Just (Padding name t r b l)
 
-                        _ ->
-                            Nothing
-            , case spacing of
-                Just x ->
-                    spacing
+                            _ ->
+                                Nothing
+            , spacing = 
+                case spacing of
+                    Just x ->
+                        spacing
 
-                Nothing ->
-                    case attr of
-                        StyleClass _ (SpacingStyle name x y) ->
-                            Just (Spaced name x y)
+                    Nothing ->
+                        case attr of
+                            StyleClass _ (SpacingStyle name x y) ->
+                                Just (Spaced name x y)
 
-                        _ ->
-                            Nothing
-            )
+                            _ ->
+                                Nothing
+            }
         )
-        ( Nothing, Nothing )
+        { padding = Nothing, spacing = Nothing }
         attrs
 
 
-getSpacing : List (Attribute aligned msg) -> ( Int, Int ) -> ( Int, Int )
+getSpacing : Array (Attribute aligned msg) -> {x: Int, y:Int } -> {x: Int, y: Int }
 getSpacing attrs default =
     attrs
-        |> List.foldr
+        |> Array.foldr
             (\attr acc ->
                 case acc of
                     Just x ->
@@ -1995,7 +2010,7 @@ getSpacing attrs default =
                     Nothing ->
                         case attr of
                             StyleClass _ (SpacingStyle _ x y) ->
-                                Just ( x, y )
+                                Just {x=x, y=y}
 
                             _ ->
                                 Nothing
@@ -2004,10 +2019,10 @@ getSpacing attrs default =
         |> Maybe.withDefault default
 
 
-getWidth : List (Attribute aligned msg) -> Maybe Length
+getWidth : Array (Attribute aligned msg) -> Maybe Length
 getWidth attrs =
     attrs
-        |> List.foldr
+        |> Array.foldr
             (\attr acc ->
                 case acc of
                     Just x ->
@@ -2024,10 +2039,10 @@ getWidth attrs =
             Nothing
 
 
-getHeight : List (Attribute aligned msg) -> Maybe Length
+getHeight : Array (Attribute aligned msg) -> Maybe Length
 getHeight attrs =
     attrs
-        |> List.foldr
+        |> Array.foldr
             (\attr acc ->
                 case acc of
                     Just x ->
@@ -2085,8 +2100,8 @@ textElementFill str =
 
 
 type Children x
-    = Unkeyed (List x)
-    | Keyed (List ( String, x ))
+    = Unkeyed (Array x)
+    | Keyed (Array {key: String, node: x})
 
 
 toHtml mode el =
@@ -2105,11 +2120,11 @@ toHtml mode el =
 
 
 {-| -}
-renderRoot : List Option -> List (Attribute aligned msg) -> Element msg -> VirtualDom.Node msg
-renderRoot optionList attributes child =
+renderRoot : Array Option -> Array (Attribute aligned msg) -> Element msg -> VirtualDom.Node msg
+renderRoot optionArray attributes child =
     let
         options =
-            optionsToRecord optionList
+            optionsToRecord optionArray
 
         embedStyle =
             case options.mode of
@@ -2157,13 +2172,13 @@ type alias FocusStyle =
 
 type alias Shadow =
     { color : Color
-    , offset : ( Int, Int )
+    , offset : {x:Int, y:Int}
     , blur : Int
     , size : Int
     }
 
 
-rootStyle : List (Attribute aligned msg)
+rootStyle : Array (Attribute aligned msg)
 rootStyle =
     let
         families =
@@ -2177,7 +2192,7 @@ rootStyle =
     , StyleClass Flag.fontColor (Colored ("fc-" ++ formatColorClass (Rgba 0 0 0 1)) "color" (Rgba 0 0 0 1))
     , StyleClass Flag.fontSize (FontSize 20)
     , StyleClass Flag.fontFamily <|
-        FontFamily (List.foldl renderFontClassName "font-" families)
+        FontFamily (Array.foldl renderFontClassName "font-" families)
             families
     ]
 
@@ -2217,10 +2232,10 @@ renderFontClassName font current =
 
 renderFocusStyle :
     FocusStyle
-    -> List Style
+    -> Array Style
 renderFocusStyle focus =
     [ Style (Internal.Style.dot classes.focusedWithin ++ ":focus-within")
-        (List.filterMap identity
+        (Array.filterMap identity
             [ Maybe.map (\color -> Property "border-color" (formatColor color)) focus.borderColor
             , Maybe.map (\color -> Property "background-color" (formatColor color)) focus.backgroundColor
             , Maybe.map
@@ -2229,9 +2244,9 @@ renderFocusStyle focus =
                         (formatBoxShadow
                             { color = shadow.color
                             , offset =
-                                shadow.offset
-                                    |> Tuple.mapFirst toFloat
-                                    |> Tuple.mapSecond toFloat
+                                { x = toFloat shadow.offset.x 
+                                , y = toFloat shadow.offset.y
+                                }
                             , inset = False
                             , blur =
                                 toFloat shadow.blur
@@ -2249,7 +2264,7 @@ renderFocusStyle focus =
             ++ (Internal.Style.dot classes.any ++ ".focusable:focus, ")
             ++ (".ui-slide-bar:focus + " ++ Internal.Style.dot classes.any ++ " .focusable-thumb")
         )
-        (List.filterMap identity
+        (Array.filterMap identity
             [ Maybe.map (\color -> Property "border-color" (formatColor color)) focus.borderColor
             , Maybe.map (\color -> Property "background-color" (formatColor color)) focus.backgroundColor
             , Maybe.map
@@ -2258,9 +2273,9 @@ renderFocusStyle focus =
                         (formatBoxShadow
                             { color = shadow.color
                             , offset =
-                                shadow.offset
-                                    |> Tuple.mapFirst toFloat
-                                    |> Tuple.mapSecond toFloat
+                                { x = toFloat shadow.offset.x 
+                                , y = toFloat shadow.offset.y
+                                }
                             , inset = False
                             , blur = toFloat shadow.blur
                             , size = toFloat shadow.size
@@ -2282,14 +2297,14 @@ focusDefaultStyle =
         Just
             { color =
                 Rgba (155 / 255) (203 / 255) 1 1
-            , offset = ( 0, 0 )
+            , offset = {x=0, y=0}
             , blur = 0
             , size = 3
             }
     }
 
 
-optionsToRecord : List Option -> OptionRecord
+optionsToRecord : Array Option -> OptionRecord
 optionsToRecord options =
     let
         combine opt record =
@@ -2343,7 +2358,7 @@ optionsToRecord options =
             }
     in
     andFinally <|
-        List.foldr combine
+        Array.foldr combine
             { hover = Nothing
             , focus = Nothing
             , mode = Nothing
@@ -2351,7 +2366,7 @@ optionsToRecord options =
             options
 
 
-toStyleSheet : OptionRecord -> List Style -> VirtualDom.Node msg
+toStyleSheet : OptionRecord -> Array Style -> VirtualDom.Node msg
 toStyleSheet options styleSheet =
     case options.mode of
         Layout ->
@@ -2397,27 +2412,27 @@ renderTopLevelValues rules =
                     Nothing
 
         allNames =
-            List.map Tuple.first rules
+            Array.map .name rules
 
-        fontImports ( name, typefaces ) =
+        fontImports {name, typefaces} =
             let
                 imports =
-                    String.join "\n" (List.filterMap withImport typefaces)
+                    String.join "\n" (Array.filterMap withImport typefaces)
             in
             imports
 
-        fontAdjustments ( name, typefaces ) =
+        fontAdjustments {name, typefaces} =
             case typefaceAdjustment typefaces of
                 Nothing ->
                     String.join ""
-                        (List.map (renderNullAdjustmentRule name) allNames)
+                        (Array.map (renderNullAdjustmentRule name) allNames)
 
                 Just adjustment ->
                     String.join ""
-                        (List.map (renderFontAdjustmentRule name adjustment) allNames)
+                        (Array.map (renderFontAdjustmentRule name adjustment) allNames)
     in
-    String.join "\n" (List.map fontImports rules)
-        ++ String.join "\n" (List.map fontAdjustments rules)
+    String.join "\n" (Array.map fontImports rules)
+        ++ String.join "\n" (Array.map fontAdjustments rules)
 
 
 renderNullAdjustmentRule fontToAdjust otherFontName =
@@ -2441,7 +2456,7 @@ renderNullAdjustmentRule fontToAdjust otherFontName =
                 ++ " ."
                 ++ classes.sizeByCapital
             )
-            [ ( "line-height", "1" )
+            [ { name = "line-height", val = "1" }
             ]
         , bracket
             ("."
@@ -2457,13 +2472,13 @@ renderNullAdjustmentRule fontToAdjust otherFontName =
                 ++ " > ."
                 ++ Internal.Style.classes.text
             )
-            [ ( "vertical-align", "0" )
-            , ( "line-height", "1" )
+            [ { name = "vertical-align", val = "0" }
+            , {name = "line-height", val = "1" }
             ]
         ]
 
 
-fontRule name modifier ( parentAdj, textAdjustment ) =
+fontRule name modifier {capital=parentAdj,full=textAdjustment} =
     [ bracket
         ("."
             ++ name
@@ -2494,7 +2509,7 @@ fontRule name modifier ( parentAdj, textAdjustment ) =
     ]
 
 
-renderFontAdjustmentRule fontToAdjust ( full, capital ) otherFontName =
+renderFontAdjustmentRule fontToAdjust {full, capital} otherFontName =
     let
         name =
             if fontToAdjust == otherFontName then
@@ -2509,25 +2524,25 @@ renderFontAdjustmentRule fontToAdjust ( full, capital ) otherFontName =
 
 bracket selector rules =
     let
-        renderPair ( name, val ) =
+        renderPair {name, val} =
             name ++ ": " ++ val ++ ";"
     in
-    selector ++ " {" ++ String.join "" (List.map renderPair rules) ++ "}"
+    selector ++ " {" ++ String.join "" (Array.map renderPair rules) ++ "}"
 
 
 fontAdjustmentRules converted =
-    ( [ ( "display", "block" )
+    { full = [ { name = "display", val = "block" }
       ]
-    , [ ( "display", "inline-block" )
-      , ( "line-height", String.fromFloat converted.height )
-      , ( "vertical-align", String.fromFloat converted.vertical ++ "em" )
-      , ( "font-size", String.fromFloat converted.size ++ "em" )
+    , capital = [ { name = "display", val ="inline-block" }
+      , { name = "line-height", val = String.fromFloat converted.height }
+      , { name = "vertical-align", val = String.fromFloat converted.vertical ++ "em" }
+      , { name = "font-size", val = String.fromFloat converted.size ++ "em" }
       ]
-    )
+    }
 
 
 typefaceAdjustment typefaces =
-    List.foldl
+    Array.foldl
         (\face found ->
             case found of
                 Nothing ->
@@ -2539,11 +2554,11 @@ typefaceAdjustment typefaces =
 
                                 Just adjustment ->
                                     Just
-                                        ( fontAdjustmentRules
+                                        { full = fontAdjustmentRules
                                             (.full (convertAdjustment adjustment))
-                                        , fontAdjustmentRules
+                                        , capital = fontAdjustmentRules
                                             (.capital (convertAdjustment adjustment))
-                                        )
+                                        }
 
                         _ ->
                             found
@@ -2579,7 +2594,7 @@ fontName font =
 topLevelValue rule =
     case rule of
         FontFamily name typefaces ->
-            Just ( name, typefaces )
+            Just { name = name, typefaces = typefaces }
 
         _ ->
             Nothing
@@ -2595,18 +2610,18 @@ renderProps force (Property key val) existing =
 
 encodeStyles options stylesheet =
     stylesheet
-        |> List.map
+        |> Array.map
             (\style ->
                 let
                     styled =
                         renderStyleRule options style Nothing
                 in
-                ( getStyleName style, Encode.list Encode.string styled )
+                { key = getStyleName style, value = Encode.array Encode.string styled }
             )
         |> Encode.object
 
 
-toStyleSheetString : OptionRecord -> List Style -> String
+toStyleSheetString : OptionRecord -> Array Style -> String
 toStyleSheetString options stylesheet =
     let
         combine style rendered =
@@ -2617,19 +2632,19 @@ toStyleSheetString options stylesheet =
                         rendered.topLevel
 
                     Just topLevel ->
-                        topLevel :: rendered.topLevel
+                        Array.pushFirst topLevel rendered.topLevel
             }
     in
-    case List.foldl combine { topLevel = [], rules = [] } stylesheet of
+    case Array.foldl combine { topLevel = [], rules = [] } stylesheet of
         { topLevel, rules } ->
             renderTopLevelValues topLevel ++ String.concat rules
 
 
-renderStyle : OptionRecord -> Maybe PseudoClass -> String -> List Property -> List String
+renderStyle : OptionRecord -> Maybe PseudoClass -> String -> Array Property -> Array String
 renderStyle options maybePseudo selector props =
     case maybePseudo of
         Nothing ->
-            [ selector ++ "{" ++ List.foldl (renderProps False) "" props ++ "\n}" ]
+            [ selector ++ "{" ++ Array.foldl (renderProps False) "" props ++ "\n}" ]
 
         Just pseudo ->
             case pseudo of
@@ -2639,15 +2654,15 @@ renderStyle options maybePseudo selector props =
                             []
 
                         ForceHover ->
-                            [ selector ++ "-hv {" ++ List.foldl (renderProps True) "" props ++ "\n}" ]
+                            [ selector ++ "-hv {" ++ Array.foldl (renderProps True) "" props ++ "\n}" ]
 
                         AllowHover ->
-                            [ selector ++ "-hv:hover {" ++ List.foldl (renderProps False) "" props ++ "\n}" ]
+                            [ selector ++ "-hv:hover {" ++ Array.foldl (renderProps False) "" props ++ "\n}" ]
 
                 Focus ->
                     let
                         renderedProps =
-                            List.foldl (renderProps False) "" props
+                            Array.foldl (renderProps False) "" props
                     in
                     [ selector ++ "-fs:focus {" ++ renderedProps ++ "\n}"
                     , ("." ++ classes.any ++ ":focus " ++ selector ++ "-fs  {")
@@ -2662,10 +2677,10 @@ renderStyle options maybePseudo selector props =
                     ]
 
                 Active ->
-                    [ selector ++ "-act:active {" ++ List.foldl (renderProps False) "" props ++ "\n}" ]
+                    [ selector ++ "-act:active {" ++ Array.foldl (renderProps False) "" props ++ "\n}" ]
 
 
-renderStyleRule : OptionRecord -> Style -> Maybe PseudoClass -> List String
+renderStyleRule : OptionRecord -> Style -> Maybe PseudoClass -> Array String
 renderStyleRule options rule maybePseudo =
     case rule of
         Style selector props ->
@@ -2702,18 +2717,18 @@ renderStyleRule options rule maybePseudo =
             let
                 features =
                     typefaces
-                        |> List.filterMap renderVariants
+                        |> Array.filterMap renderVariants
                         |> String.join ", "
 
                 families =
                     [ Property "font-family"
                         (typefaces
-                            |> List.map fontName
+                            |> Array.map fontName
                             |> String.join ", "
                         )
                     , Property "font-feature-settings" features
                     , Property "font-variant"
-                        (if List.any hasSmallCaps typefaces then
+                        (if Array.any hasSmallCaps typefaces then
                             "small-caps"
 
                          else
@@ -2784,7 +2799,7 @@ renderStyleRule options rule maybePseudo =
                 single =
                     "." ++ Internal.Style.classes.single
             in
-            List.concat
+            Array.flatten
                 [ renderStyle options maybePseudo (class ++ row ++ " > " ++ any ++ " + " ++ any) [ Property "margin-left" xPx ]
 
                 -- margins don't apply to last element of normal, unwrapped rows
@@ -2899,19 +2914,19 @@ renderStyleRule options rule maybePseudo =
             let
                 class =
                     ".grid-rows-"
-                        ++ String.join "-" (List.map lengthClassName template.rows)
+                        ++ String.join "-" (Array.map lengthClassName template.rows)
                         ++ "-cols-"
-                        ++ String.join "-" (List.map lengthClassName template.columns)
+                        ++ String.join "-" (Array.map lengthClassName template.columns)
                         ++ "-space-x-"
-                        ++ lengthClassName (Tuple.first template.spacing)
+                        ++ lengthClassName template.spacing.x
                         ++ "-space-y-"
-                        ++ lengthClassName (Tuple.second template.spacing)
+                        ++ lengthClassName template.spacing.y
 
                 ySpacing =
-                    toGridLength (Tuple.second template.spacing)
+                    toGridLength template.spacing.y
 
                 xSpacing =
-                    toGridLength (Tuple.first template.spacing)
+                    toGridLength template.spacing.x
 
                 toGridLength x =
                     toGridLengthHelper Nothing Nothing x
@@ -2922,31 +2937,31 @@ renderStyleRule options rule maybePseudo =
                             String.fromInt px ++ "px"
 
                         Content ->
-                            case ( minimum, maximum ) of
-                                ( Nothing, Nothing ) ->
+                            case {minimum=minimum, maximum=maximum} of
+                                { minimum=Nothing, maximum=Nothing } ->
                                     "max-content"
 
-                                ( Just minSize, Nothing ) ->
+                                {minimum=Just minSize, maximum=Nothing } ->
                                     "minmax(" ++ String.fromInt minSize ++ "px, " ++ "max-content)"
 
-                                ( Nothing, Just maxSize ) ->
+                                {minimum=Nothing, maximum=Just maxSize } ->
                                     "minmax(max-content, " ++ String.fromInt maxSize ++ "px)"
 
-                                ( Just minSize, Just maxSize ) ->
+                                {minimum=Just minSize, maximum=Just maxSize } ->
                                     "minmax(" ++ String.fromInt minSize ++ "px, " ++ String.fromInt maxSize ++ "px)"
 
                         Fill i ->
-                            case ( minimum, maximum ) of
-                                ( Nothing, Nothing ) ->
+                            case { minimum=minimum, maximum=maximum } of
+                                {minimum= Nothing, maximum=Nothing } ->
                                     String.fromInt i ++ "fr"
 
-                                ( Just minSize, Nothing ) ->
+                                {minimum= Just minSize, maximum=Nothing } ->
                                     "minmax(" ++ String.fromInt minSize ++ "px, " ++ String.fromInt i ++ "fr" ++ "fr)"
 
-                                ( Nothing, Just maxSize ) ->
+                                {minimum= Nothing, maximum=Just maxSize } ->
                                     "minmax(max-content, " ++ String.fromInt maxSize ++ "px)"
 
-                                ( Just minSize, Just maxSize ) ->
+                                {minimum= Just minSize, maximum=Just maxSize } ->
                                     "minmax(" ++ String.fromInt minSize ++ "px, " ++ String.fromInt maxSize ++ "px)"
 
                         Min m len ->
@@ -2957,13 +2972,13 @@ renderStyleRule options rule maybePseudo =
 
                 msColumns =
                     template.columns
-                        |> List.map toGridLength
+                        |> Array.map toGridLength
                         |> String.join ySpacing
                         |> (\x -> "-ms-grid-columns: " ++ x ++ ";")
 
                 msRows =
                     template.columns
-                        |> List.map toGridLength
+                        |> Array.map toGridLength
                         |> String.join ySpacing
                         |> (\x -> "-ms-grid-rows: " ++ x ++ ";")
 
@@ -2972,21 +2987,21 @@ renderStyleRule options rule maybePseudo =
 
                 columns =
                     template.columns
-                        |> List.map toGridLength
+                        |> Array.map toGridLength
                         |> String.join " "
                         |> (\x -> "grid-template-columns: " ++ x ++ ";")
 
                 rows =
                     template.rows
-                        |> List.map toGridLength
+                        |> Array.map toGridLength
                         |> String.join " "
                         |> (\x -> "grid-template-rows: " ++ x ++ ";")
 
                 gapX =
-                    "grid-column-gap:" ++ toGridLength (Tuple.first template.spacing) ++ ";"
+                    "grid-column-gap:" ++ toGridLength template.spacing.x ++ ";"
 
                 gapY =
-                    "grid-row-gap:" ++ toGridLength (Tuple.second template.spacing) ++ ";"
+                    "grid-row-gap:" ++ toGridLength template.spacing.y ++ ";"
 
                 modernGrid =
                     class ++ "{" ++ columns ++ rows ++ gapX ++ gapY ++ "}"
@@ -3058,7 +3073,7 @@ renderStyleRule options rule maybePseudo =
                 renderPseudoRule style =
                     renderStyleRule options style (Just class)
             in
-            List.concatMap renderPseudoRule styles
+            Array.flatMap renderPseudoRule styles
 
         Transform transform ->
             let
@@ -3068,8 +3083,8 @@ renderStyleRule options rule maybePseudo =
                 class =
                     transformClass transform
             in
-            case ( class, val ) of
-                ( Just cls, Just v ) ->
+            case { class=class, val=val } of
+                { class = Just cls, val =Just v } ->
                     renderStyle options
                         maybePseudo
                         ("." ++ cls)
@@ -3102,8 +3117,8 @@ lengthClassName x =
 
 formatDropShadow shadow =
     String.join " "
-        [ String.fromFloat (Tuple.first shadow.offset) ++ "px"
-        , String.fromFloat (Tuple.second shadow.offset) ++ "px"
+        [ String.fromFloat shadow.offset.x ++ "px"
+        , String.fromFloat shadow.offset.y ++ "px"
         , String.fromFloat shadow.blur ++ "px"
         , formatColor shadow.color
         ]
@@ -3111,8 +3126,8 @@ formatDropShadow shadow =
 
 formatTextShadow shadow =
     String.join " "
-        [ String.fromFloat (Tuple.first shadow.offset) ++ "px"
-        , String.fromFloat (Tuple.second shadow.offset) ++ "px"
+        [ String.fromFloat shadow.offset.x ++ "px"
+        , String.fromFloat shadow.offset.y ++ "px"
         , String.fromFloat shadow.blur ++ "px"
         , formatColor shadow.color
         ]
@@ -3121,8 +3136,8 @@ formatTextShadow shadow =
 textShadowClass shadow =
     String.concat
         [ "txt"
-        , floatClass (Tuple.first shadow.offset) ++ "px"
-        , floatClass (Tuple.second shadow.offset) ++ "px"
+        , floatClass shadow.offset.x ++ "px"
+        , floatClass shadow.offset.y ++ "px"
         , floatClass shadow.blur ++ "px"
         , formatColorClass shadow.color
         ]
@@ -3130,14 +3145,14 @@ textShadowClass shadow =
 
 formatBoxShadow shadow =
     String.join " " <|
-        List.filterMap identity
+        Array.filterMap identity
             [ if shadow.inset then
                 Just "inset"
 
               else
                 Nothing
-            , Just <| String.fromFloat (Tuple.first shadow.offset) ++ "px"
-            , Just <| String.fromFloat (Tuple.second shadow.offset) ++ "px"
+            , Just <| String.fromFloat shadow.offset.x ++ "px"
+            , Just <| String.fromFloat shadow.offset.y ++ "px"
             , Just <| String.fromFloat shadow.blur ++ "px"
             , Just <| String.fromFloat shadow.size ++ "px"
             , Just <| formatColor shadow.color
@@ -3151,8 +3166,8 @@ boxShadowClass shadow =
 
           else
             "box-"
-        , floatClass (Tuple.first shadow.offset) ++ "px"
-        , floatClass (Tuple.second shadow.offset) ++ "px"
+        , floatClass shadow.offset.x ++ "px"
+        , floatClass shadow.offset.y ++ "px"
         , floatClass shadow.blur ++ "px"
         , floatClass shadow.size ++ "px"
         , formatColorClass shadow.color
@@ -3161,15 +3176,15 @@ boxShadowClass shadow =
 
 floatClass : Float -> String
 floatClass x =
-    String.fromInt (round (x * 255))
+    String.fromInt (Math.round (x * 255))
 
 
 formatColor : Color -> String
 formatColor (Rgba red green blue alpha) =
     "rgba("
-        ++ String.fromInt (round (red * 255))
-        ++ ("," ++ String.fromInt (round (green * 255)))
-        ++ ("," ++ String.fromInt (round (blue * 255)))
+        ++ String.fromInt (Math.round (red * 255))
+        ++ ("," ++ String.fromInt (Math.round (green * 255)))
+        ++ ("," ++ String.fromInt (Math.round (blue * 255)))
         ++ ("," ++ String.fromFloat alpha ++ ")")
 
 
@@ -3245,13 +3260,13 @@ getStyleName style =
 
         GridTemplateStyle template ->
             "grid-rows-"
-                ++ String.join "-" (List.map lengthClassName template.rows)
+                ++ String.join "-" (Array.map lengthClassName template.rows)
                 ++ "-cols-"
-                ++ String.join "-" (List.map lengthClassName template.columns)
+                ++ String.join "-" (Array.map lengthClassName template.columns)
                 ++ "-space-x-"
-                ++ lengthClassName (Tuple.first template.spacing)
+                ++ lengthClassName template.spacing.x
                 ++ "-space-y-"
-                ++ lengthClassName (Tuple.second template.spacing)
+                ++ lengthClassName template.spacing.y
 
         GridPosition pos ->
             "gp grid-pos-"
@@ -3276,7 +3291,7 @@ getStyleName style =
                         Active ->
                             "act"
             in
-            List.map
+            Array.map
                 (\sty ->
                     case getStyleName sty of
                         "" ->
@@ -3386,7 +3401,7 @@ mapAttr fn attr =
             TransformComponent fl trans
 
 
-mapAttrFromStyle : (msg -> msg1) -> Attribute Never msg -> Attribute () msg1
+mapAttrFromStyle : (msg -> msg1) -> Attribute Never msg -> Attribute Unit msg1
 mapAttrFromStyle fn attr =
     case attr of
         NoAttribute ->
@@ -3424,26 +3439,26 @@ mapAttrFromStyle fn attr =
             TransformComponent fl trans
 
 
-unwrapDecorations : List (Attribute Never Never) -> List Style
+unwrapDecorations : Array (Attribute Never Never) -> Array Style
 unwrapDecorations attrs =
-    case List.foldl unwrapDecsHelper ( [], Untransformed ) attrs of
-        ( styles, transform ) ->
-            Transform transform :: styles
+    case Array.foldl unwrapDecsHelper { styles=[], transform=Untransformed } attrs of
+        { styles, transform } ->
+            Array.pushFirst (Transform transform) styles
 
 
-unwrapDecsHelper attr ( styles, trans ) =
+unwrapDecsHelper attr {styles, transform} =
     case removeNever attr of
         StyleClass _ style ->
-            ( style :: styles, trans )
+            {styles= Array.pushFirst style styles, transform=transform }
 
         TransformComponent flag component ->
-            ( styles, composeTransformation trans component )
+            { styles = styles, transform = composeTransformation transform component }
 
         _ ->
-            ( styles, trans )
+            {styles=styles, transform=transform}
 
 
-removeNever : Attribute Never Never -> Attribute () msg
+removeNever : Attribute Never Never -> Attribute Unit msg
 removeNever style =
     mapAttrFromStyle Basics.never style
 
@@ -3510,15 +3525,15 @@ convertAdjustment adjustment =
             ]
 
         ascender =
-            Maybe.withDefault adjustment.capital (List.maximum lines)
+            Maybe.withDefault adjustment.capital (Array.maximum lines)
 
         descender =
-            Maybe.withDefault adjustment.descender (List.minimum lines)
+            Maybe.withDefault adjustment.descender (Array.minimum lines)
 
         newBaseline =
             lines
-                |> List.filter (\x -> x /= descender)
-                |> List.minimum
+                |> Array.filter (\x -> x /= descender)
+                |> Array.minimum
                 |> Maybe.withDefault adjustment.baseline
 
         capitalVertical =

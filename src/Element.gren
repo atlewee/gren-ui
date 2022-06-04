@@ -329,7 +329,7 @@ type alias Element msg =
 {-| An attribute that can be attached to an `Element`
 -}
 type alias Attribute msg =
-    Internal.Attribute () msg
+    Internal.Attribute {} msg
 
 
 {-| This is a special attribute that counts as both a `Attribute msg` and a `Decoration`.
@@ -441,23 +441,29 @@ fillPortion =
 
 {-| This is your top level node where you can turn `Element` into `Html`.
 -}
-layout : List (Attribute msg) -> Element msg -> Html msg
+layout : Array (Attribute msg) -> Element msg -> Html msg
 layout =
     layoutWith { options = [] }
 
 
 {-| -}
-layoutWith : { options : List Option } -> List (Attribute msg) -> Element msg -> Html msg
+layoutWith : { options : Array Option } -> Array (Attribute msg) -> Element msg -> Html msg
 layoutWith { options } attrs child =
     Internal.renderRoot options
-        (Internal.htmlClass
-            (String.join " "
-                [ classes.root
-                , classes.any
-                , classes.single
+        (Array.pushFirst 
+            (Internal.htmlClass
+                (String.join " "
+                    [ classes.root
+                    , classes.any
+                    , classes.single
+                    ]
+                )
+            )
+            (Array.flatten 
+                [Internal.rootStyle
+                ,attrs
                 ]
             )
-            :: (Internal.rootStyle ++ attrs)
         )
         child
 
@@ -486,7 +492,7 @@ defaultFocus :
     , shadow :
         Maybe
             { color : Color
-            , offset : ( Int, Int )
+            , offset : { x: Int, y: Int }
             , blur : Int
             , size : Int
             }
@@ -502,7 +508,7 @@ type alias FocusStyle =
     , shadow :
         Maybe
             { color : Color
-            , offset : ( Int, Int )
+            , offset : { x: Int, y: Int }
             , blur : Int
             , size : Int
             }
@@ -570,56 +576,62 @@ If you want multiple children, you'll need to use something like `row` or `colum
             (Element.text "You've made a stylish element!")
 
 -}
-el : List (Attribute msg) -> Element msg -> Element msg
+el : Array (Attribute msg) -> Element msg -> Element msg
 el attrs child =
     Internal.element
         Internal.asEl
         Internal.div
-        (width shrink
-            :: height shrink
-            :: attrs
+        (Array.prefix 
+            [ width shrink
+            , height shrink
+            ] 
+            attrs
         )
         (Internal.Unkeyed [ child ])
 
 
 {-| -}
-row : List (Attribute msg) -> List (Element msg) -> Element msg
+row : Array (Attribute msg) -> Array (Element msg) -> Element msg
 row attrs children =
     Internal.element
         Internal.asRow
         Internal.div
-        (Internal.htmlClass (classes.contentLeft ++ " " ++ classes.contentCenterY)
-            :: width shrink
-            :: height shrink
-            :: attrs
+        (Array.prefix 
+            [ Internal.htmlClass (classes.contentLeft ++ " " ++ classes.contentCenterY)
+            , width shrink
+            , height shrink
+            ] 
+            attrs
         )
         (Internal.Unkeyed children)
 
 
 {-| -}
-column : List (Attribute msg) -> List (Element msg) -> Element msg
+column : Array (Attribute msg) -> Array (Element msg) -> Element msg
 column attrs children =
     Internal.element
         Internal.asColumn
         Internal.div
-        (Internal.htmlClass
-            (classes.contentTop
-                ++ " "
-                ++ classes.contentLeft
-            )
-            :: height shrink
-            :: width shrink
-            :: attrs
+        (Array.prefix 
+            [ Internal.htmlClass
+                (classes.contentTop
+                    ++ " "
+                    ++ classes.contentLeft
+                )
+            , height shrink
+            , width shrink
+            ]
+            attrs
         )
         (Internal.Unkeyed children)
 
 
 {-| Same as `row`, but will wrap if it takes up too much horizontal space.
 -}
-wrappedRow : List (Attribute msg) -> List (Element msg) -> Element msg
+wrappedRow : Array (Attribute msg) -> Array (Element msg) -> Element msg
 wrappedRow attrs children =
     let
-        ( padded, spaced ) =
+        { padding=padded, spacing=spaced } =
             Internal.extractSpacingAndPadding attrs
     in
     case spaced of
@@ -627,16 +639,18 @@ wrappedRow attrs children =
             Internal.element
                 Internal.asRow
                 Internal.div
-                (Internal.htmlClass
-                    (classes.contentLeft
-                        ++ " "
-                        ++ classes.contentCenterY
-                        ++ " "
-                        ++ classes.wrapped
-                    )
-                    :: width shrink
-                    :: height shrink
-                    :: attrs
+                (Array.prefix 
+                    [ Internal.htmlClass
+                        (classes.contentLeft
+                            ++ " "
+                            ++ classes.contentCenterY
+                            ++ " "
+                            ++ classes.wrapped
+                        )
+                    , width shrink
+                    , height shrink
+                    ] 
+                    attrs
                 )
                 (Internal.Unkeyed children)
 
@@ -685,17 +699,20 @@ wrappedRow attrs children =
                     Internal.element
                         Internal.asRow
                         Internal.div
-                        (Internal.htmlClass
-                            (classes.contentLeft
-                                ++ " "
-                                ++ classes.contentCenterY
-                                ++ " "
-                                ++ classes.wrapped
+                        (Array.pushLast pad
+                            (Array.prefix 
+                                [ Internal.htmlClass
+                                    (classes.contentLeft
+                                        ++ " "
+                                        ++ classes.contentCenterY
+                                        ++ " "
+                                        ++ classes.wrapped
+                                    )
+                                , width shrink
+                                , height shrink
+                                ] 
+                                attrs
                             )
-                            :: width shrink
-                            :: height shrink
-                            :: attrs
-                            ++ [ pad ]
                         )
                         (Internal.Unkeyed children)
 
@@ -716,14 +733,15 @@ wrappedRow attrs children =
                             [ Internal.element
                                 Internal.asRow
                                 Internal.div
-                                (Internal.htmlClass
-                                    (classes.contentLeft
-                                        ++ " "
-                                        ++ classes.contentCenterY
-                                        ++ " "
-                                        ++ classes.wrapped
-                                    )
-                                    :: Internal.Attr
+                                
+                                    [ Internal.htmlClass
+                                        (classes.contentLeft
+                                            ++ " "
+                                            ++ classes.contentCenterY
+                                            ++ " "
+                                            ++ classes.wrapped
+                                        )
+                                    , Internal.Attr
                                         (Html.Attributes.style "margin"
                                             (String.fromFloat halfY
                                                 ++ "px"
@@ -732,23 +750,23 @@ wrappedRow attrs children =
                                                 ++ "px"
                                             )
                                         )
-                                    :: Internal.Attr
+                                    , Internal.Attr
                                         (Html.Attributes.style "width"
                                             ("calc(100% + "
                                                 ++ String.fromInt x
                                                 ++ "px)"
                                             )
                                         )
-                                    :: Internal.Attr
+                                    , Internal.Attr
                                         (Html.Attributes.style "height"
                                             ("calc(100% + "
                                                 ++ String.fromInt y
                                                 ++ "px)"
                                             )
                                         )
-                                    :: Internal.StyleClass Flag.spacing (Internal.SpacingStyle spaceName x y)
-                                    :: []
-                                )
+                                    , Internal.StyleClass Flag.spacing (Internal.SpacingStyle spaceName x y)
+                                    ]
+                                
                                 (Internal.Unkeyed children)
                             ]
                         )
@@ -794,7 +812,7 @@ So, if we have a list of `persons`:
         , lastName : String
         }
 
-    persons : List Person
+    persons : Array Person
     persons =
         [ { firstName = "David"
           , lastName = "Bowie"
@@ -828,17 +846,17 @@ We could render it using
 
 -}
 table :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
-        { data : List records
-        , columns : List (Column records msg)
+        { data : Array records
+        , columns : Array (Column records msg)
         }
     -> Element msg
 table attrs config =
     tableHelper attrs
         { data = config.data
         , columns =
-            List.map InternalColumn config.columns
+            Array.map InternalColumn config.columns
         }
 
 
@@ -853,24 +871,24 @@ type alias IndexedColumn record msg =
 {-| Same as `Element.table` except the `view` for each column will also receive the row index as well as the record.
 -}
 indexedTable :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
-        { data : List records
-        , columns : List (IndexedColumn records msg)
+        { data : Array records
+        , columns : Array (IndexedColumn records msg)
         }
     -> Element msg
 indexedTable attrs config =
     tableHelper attrs
         { data = config.data
         , columns =
-            List.map InternalIndexedColumn config.columns
+            Array.map InternalIndexedColumn config.columns
         }
 
 
 {-| -}
 type alias InternalTable records msg =
-    { data : List records
-    , columns : List (InternalTableColumn records msg)
+    { data : Array records
+    , columns : Array (InternalTableColumn records msg)
     }
 
 
@@ -880,11 +898,11 @@ type InternalTableColumn record msg
     | InternalColumn (Column record msg)
 
 
-tableHelper : List (Attribute msg) -> InternalTable data msg -> Element msg
+tableHelper : Array (Attribute msg) -> InternalTable data msg -> Element msg
 tableHelper attrs config =
     let
-        ( sX, sY ) =
-            Internal.getSpacing attrs ( 0, 0 )
+        { x=sX, y=sY } =
+            Internal.getSpacing attrs {x=0,y=0}
 
         columnHeader col =
             case col of
@@ -903,21 +921,21 @@ tableHelper attrs config =
                     colConfig.width
 
         maybeHeaders =
-            List.map columnHeader config.columns
+            Array.map columnHeader config.columns
                 |> (\headers ->
-                        if List.all ((==) Internal.Empty) headers then
+                        if Array.all ((==) Internal.Empty) headers then
                             Nothing
 
                         else
-                            Just (List.indexedMap (\col header -> onGrid 1 (col + 1) header) headers)
+                            Just (Array.indexedMap (\col header -> onGrid 1 (col + 1) header) headers)
                    )
 
         template =
             Internal.StyleClass Flag.gridTemplate <|
                 Internal.GridTemplateStyle
-                    { spacing = ( px sX, px sY )
-                    , columns = List.map columnWidth config.columns
-                    , rows = List.repeat (List.length config.data) Internal.Content
+                    { spacing = {x=px sX, y=px sY}
+                    , columns = Array.map columnWidth config.columns
+                    , rows = Array.repeat (Array.length config.data) Internal.Content
                     }
 
         onGrid rowLevel columnLevel elem =
@@ -940,25 +958,28 @@ tableHelper attrs config =
                 InternalIndexedColumn col ->
                     { cursor
                         | elements =
-                            onGrid cursor.row
-                                cursor.column
-                                (col.view
-                                    (if maybeHeaders == Nothing then
-                                        cursor.row - 1
+                            Array.pushFirst 
+                                (onGrid cursor.row
+                                    cursor.column
+                                    (col.view
+                                        (if maybeHeaders == Nothing then
+                                            cursor.row - 1
 
-                                     else
-                                        cursor.row - 2
+                                        else
+                                            cursor.row - 2
+                                        )
+                                        cell
                                     )
-                                    cell
                                 )
-                                :: cursor.elements
+                                cursor.elements
                         , column = cursor.column + 1
                     }
 
                 InternalColumn col ->
                     { elements =
-                        onGrid cursor.row cursor.column (col.view cell)
-                            :: cursor.elements
+                        Array.pushFirst 
+                            (onGrid cursor.row cursor.column (col.view cell))
+                            cursor.elements
                     , column = cursor.column + 1
                     , row = cursor.row
                     }
@@ -966,7 +987,7 @@ tableHelper attrs config =
         build columns rowData cursor =
             let
                 newCursor =
-                    List.foldl (add rowData)
+                    Array.foldl (add rowData)
                         cursor
                         columns
             in
@@ -976,7 +997,7 @@ tableHelper attrs config =
             }
 
         children =
-            List.foldl (build config.columns)
+            Array.foldl (build config.columns)
                 { elements = []
                 , row =
                     if maybeHeaders == Nothing then
@@ -991,9 +1012,11 @@ tableHelper attrs config =
     Internal.element
         Internal.asGrid
         Internal.div
-        (width fill
-            :: template
-            :: attrs
+        (Array.prefix 
+            [ width fill
+            , template
+            ] 
+            attrs
         )
         (Internal.Unkeyed
             (case maybeHeaders of
@@ -1001,7 +1024,7 @@ tableHelper attrs config =
                     children.elements
 
                 Just renderedHeaders ->
-                    renderedHeaders ++ List.reverse children.elements
+                    renderedHeaders ++ Array.reverse children.elements
             )
         )
 
@@ -1044,15 +1067,17 @@ Which will look something like
 **Note** `spacing` on a paragraph will set the pixel spacing between lines.
 
 -}
-paragraph : List (Attribute msg) -> List (Element msg) -> Element msg
+paragraph : Array (Attribute msg) -> Array (Element msg) -> Element msg
 paragraph attrs children =
     Internal.element
         Internal.asParagraph
         Internal.div
-        (Internal.Describe Internal.Paragraph
-            :: width fill
-            :: spacing 5
-            :: attrs
+        (Array.prefix 
+            [ Internal.Describe Internal.Paragraph
+            , width fill
+            , spacing 5
+            ] 
+            attrs
         )
         (Internal.Unkeyed children)
 
@@ -1076,17 +1101,19 @@ Which will result in something like:
 ![A text layout where an image is on the left.](https://mdgriffith.gitbooks.io/style-elements/content/assets/Screen%20Shot%202017-08-25%20at%208.42.39%20PM.png)
 
 -}
-textColumn : List (Attribute msg) -> List (Element msg) -> Element msg
+textColumn : Array (Attribute msg) -> Array (Element msg) -> Element msg
 textColumn attrs children =
     Internal.element
         Internal.asTextColumn
         Internal.div
-        (width
-            (fill
-                |> minimum 500
-                |> maximum 750
+        (Array.pushFirst 
+            ( width
+                (fill
+                    |> minimum 500
+                    |> maximum 750
+                )
             )
-            :: attrs
+            attrs
         )
         (Internal.Unkeyed children)
 
@@ -1100,12 +1127,12 @@ Leaving the description blank will cause the image to be ignored by assistive te
 So, take a moment to describe your image as you would to someone who has a harder time seeing.
 
 -}
-image : List (Attribute msg) -> { src : String, description : String } -> Element msg
+image : Array (Attribute msg) -> { src : String, description : String } -> Element msg
 image attrs { src, description } =
     let
         imageAttributes =
             attrs
-                |> List.filter
+                |> Array.filter
                     (\a ->
                         case a of
                             Internal.Width _ ->
@@ -1121,8 +1148,9 @@ image attrs { src, description } =
     Internal.element
         Internal.asEl
         Internal.div
-        (Internal.htmlClass classes.imageContainer
-            :: attrs
+        (Array.pushFirst 
+            (Internal.htmlClass classes.imageContainer)
+            attrs
         )
         (Internal.Unkeyed
             [ Internal.element
@@ -1147,7 +1175,7 @@ image attrs { src, description } =
 
 -}
 link :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { url : String
         , label : Element msg
@@ -1157,25 +1185,27 @@ link attrs { url, label } =
     Internal.element
         Internal.asEl
         (Internal.NodeName "a")
-        (Internal.Attr (Html.Attributes.href url)
-            :: Internal.Attr (Html.Attributes.rel "noopener noreferrer")
-            :: width shrink
-            :: height shrink
-            :: Internal.htmlClass
+        (Array.prefix 
+            [ Internal.Attr (Html.Attributes.href url)
+            , Internal.Attr (Html.Attributes.rel "noopener noreferrer")
+            , width shrink
+            , height shrink
+            , Internal.htmlClass
                 (classes.contentCenterX
                     ++ " "
                     ++ classes.contentCenterY
                     ++ " "
                     ++ classes.link
                 )
-            :: attrs
+            ] 
+            attrs
         )
         (Internal.Unkeyed [ label ])
 
 
 {-| -}
 newTabLink :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { url : String
         , label : Element msg
@@ -1185,19 +1215,21 @@ newTabLink attrs { url, label } =
     Internal.element
         Internal.asEl
         (Internal.NodeName "a")
-        (Internal.Attr (Html.Attributes.href url)
-            :: Internal.Attr (Html.Attributes.rel "noopener noreferrer")
-            :: Internal.Attr (Html.Attributes.target "_blank")
-            :: width shrink
-            :: height shrink
-            :: Internal.htmlClass
+        (Array.prefix 
+            [ Internal.Attr (Html.Attributes.href url)
+            , Internal.Attr (Html.Attributes.rel "noopener noreferrer")
+            , Internal.Attr (Html.Attributes.target "_blank")
+            , width shrink
+            , height shrink
+            , Internal.htmlClass
                 (classes.contentCenterX
                     ++ " "
                     ++ classes.contentCenterY
                     ++ " "
                     ++ classes.link
                 )
-            :: attrs
+            ] 
+            attrs
         )
         (Internal.Unkeyed [ label ])
 
@@ -1205,7 +1237,7 @@ newTabLink attrs { url, label } =
 {-| A link to download a file.
 -}
 download :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { url : String
         , label : Element msg
@@ -1215,13 +1247,15 @@ download attrs { url, label } =
     Internal.element
         Internal.asEl
         (Internal.NodeName "a")
-        (Internal.Attr (Html.Attributes.href url)
-            :: Internal.Attr (Html.Attributes.download "")
-            :: width shrink
-            :: height shrink
-            :: Internal.htmlClass classes.contentCenterX
-            :: Internal.htmlClass classes.contentCenterY
-            :: attrs
+        (Array.prefix 
+            [ Internal.Attr (Html.Attributes.href url)
+            , Internal.Attr (Html.Attributes.download "")
+            , width shrink
+            , height shrink
+            , Internal.htmlClass classes.contentCenterX
+            , Internal.htmlClass classes.contentCenterY
+            ] 
+            attrs
         )
         (Internal.Unkeyed [ label ])
 
@@ -1229,7 +1263,7 @@ download attrs { url, label } =
 {-| A link to download a file, but you can specify the filename.
 -}
 downloadAs :
-    List (Attribute msg)
+    Array (Attribute msg)
     ->
         { label : Element msg
         , filename : String
@@ -1240,13 +1274,15 @@ downloadAs attrs { url, filename, label } =
     Internal.element
         Internal.asEl
         (Internal.NodeName "a")
-        (Internal.Attr (Html.Attributes.href url)
-            :: Internal.Attr (Html.Attributes.download filename)
-            :: width shrink
-            :: height shrink
-            :: Internal.htmlClass classes.contentCenterX
-            :: Internal.htmlClass classes.contentCenterY
-            :: attrs
+        (Array.prefix 
+            [ Internal.Attr (Html.Attributes.href url)
+            , Internal.Attr (Html.Attributes.download filename)
+            , width shrink
+            , height shrink
+            , Internal.htmlClass classes.contentCenterX
+            , Internal.htmlClass classes.contentCenterY
+            ] 
+            attrs
         )
         (Internal.Unkeyed [ label ])
 
@@ -1321,14 +1357,14 @@ height =
 {-| -}
 scale : Float -> Attr decorative msg
 scale n =
-    Internal.TransformComponent Flag.scale (Internal.Scale ( n, n, 1 ))
+    Internal.TransformComponent Flag.scale (Internal.Scale {x=n,y=n,z=1})
 
 
 {-| Angle is given in radians. [Here are some conversion functions if you want to use another unit.](https://package.elm-lang.org/packages/elm/core/latest/Basics#degrees)
 -}
 rotate : Float -> Attr decorative msg
 rotate angle =
-    Internal.TransformComponent Flag.rotate (Internal.Rotate ( 0, 0, 1 ) angle)
+    Internal.TransformComponent Flag.rotate (Internal.Rotate {x=0,y=0,z=1} angle)
 
 
 {-| -}
@@ -1663,7 +1699,7 @@ modular normal ratio rescale =
 
 
 {-| -}
-mouseOver : List Decoration -> Attribute msg
+mouseOver : Array Decoration -> Attribute msg
 mouseOver decs =
     Internal.StyleClass Flag.hover <|
         Internal.PseudoSelector Internal.Hover
@@ -1671,7 +1707,7 @@ mouseOver decs =
 
 
 {-| -}
-mouseDown : List Decoration -> Attribute msg
+mouseDown : Array Decoration -> Attribute msg
 mouseDown decs =
     Internal.StyleClass Flag.active <|
         Internal.PseudoSelector Internal.Active
@@ -1679,7 +1715,7 @@ mouseDown decs =
 
 
 {-| -}
-focused : List Decoration -> Attribute msg
+focused : Array Decoration -> Attribute msg
 focused decs =
     Internal.StyleClass Flag.focus <|
         Internal.PseudoSelector Internal.Focus

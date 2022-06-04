@@ -4,17 +4,17 @@ module Internal.Style exposing (classes, dot, rules)
 
 
 type Class
-    = Class String (List Rule)
+    = Class String (Array Rule)
 
 
 type Rule
     = Prop String String
-    | Child String (List Rule)
-    | AllChildren String (List Rule)
-    | Supports ( String, String ) (List ( String, String ))
-    | Descriptor String (List Rule)
-    | Adjacent String (List Rule)
-    | Batch (List Rule)
+    | Child String (Array Rule)
+    | AllChildren String (Array Rule)
+    | Supports { prop: String, value: String } (Array {prop: String, value: String})
+    | Descriptor String (Array Rule)
+    | Adjacent String (Array Rule)
+    | Batch (Array Rule)
 
 
 type StyleClasses
@@ -61,22 +61,22 @@ locations =
         _ =
             case loc of
                 Above ->
-                    ()
+                    Unit
 
                 Below ->
-                    ()
+                    Unit
 
                 OnRight ->
-                    ()
+                    Unit
 
                 OnLeft ->
-                    ()
+                    Unit
 
                 Within ->
-                    ()
+                    Unit
 
                 Behind ->
-                    ()
+                    Unit
     in
     [ Above
     , Below
@@ -462,7 +462,7 @@ describeAlignment values =
     let
         createDescription alignment =
             let
-                ( content, indiv ) =
+                { content, indiv } =
                     values alignment
             in
             [ Descriptor (contentName (Content alignment)) <|
@@ -473,7 +473,7 @@ describeAlignment values =
             ]
     in
     Batch <|
-        List.concatMap createDescription alignments
+        Array.flatMap createDescription alignments
 
 
 gridAlignments values =
@@ -485,7 +485,7 @@ gridAlignments values =
             ]
     in
     Batch <|
-        List.concatMap createDescription alignments
+        Array.flatMap createDescription alignments
 
 
 type SelfDescriptor
@@ -508,9 +508,9 @@ type Alignment
 type Intermediate
     = Intermediate
         { selector : String
-        , props : List ( String, String )
+        , props : Array {prop: String, value: String }
         , closing : String
-        , others : List Intermediate
+        , others : Array Intermediate
         }
 
 
@@ -524,78 +524,89 @@ emptyIntermediate selector closing =
         }
 
 
-renderRules : Intermediate -> List Rule -> Intermediate
+renderRules : Intermediate -> Array Rule -> Intermediate
 renderRules (Intermediate parent) rulesToRender =
     let
         generateIntermediates rule rendered =
             case rule of
                 Prop name val ->
-                    { rendered | props = ( name, val ) :: rendered.props }
+                    { rendered | props = Array.pushFirst { prop=name, value=val} rendered.props }
 
-                Supports ( prop, value ) props ->
+                Supports {prop, value} props ->
                     { rendered
                         | others =
-                            Intermediate
+                            Array.pushFirst 
+                                (Intermediate
                                 { selector = "@supports (" ++ prop ++ ":" ++ value ++ ") {" ++ parent.selector
                                 , props = props
                                 , closing = "\n}"
                                 , others = []
                                 }
-                                :: rendered.others
+                                )
+                                rendered.others
                     }
 
                 Adjacent selector adjRules ->
                     { rendered
                         | others =
-                            renderRules
+                            Array.pushFirst 
+                                (renderRules
                                 (emptyIntermediate (parent.selector ++ " + " ++ selector) "")
                                 adjRules
-                                :: rendered.others
+                                )
+                                rendered.others
                     }
 
                 Child child childRules ->
                     { rendered
                         | others =
-                            renderRules
+                            Array.pushFirst 
+                                (renderRules
                                 (emptyIntermediate (parent.selector ++ " > " ++ child) "")
                                 childRules
-                                :: rendered.others
+                                )
+                                rendered.others
                     }
 
                 AllChildren child childRules ->
                     { rendered
                         | others =
-                            renderRules
+                            Array.pushFirst 
+                                (renderRules
                                 (emptyIntermediate (parent.selector ++ " " ++ child) "")
                                 childRules
-                                :: rendered.others
+                                )
+                                rendered.others
                     }
 
                 Descriptor descriptor descriptorRules ->
                     { rendered
                         | others =
-                            renderRules
+                            Array.pushFirst
+                                (renderRules
                                 (emptyIntermediate (parent.selector ++ descriptor) "")
                                 descriptorRules
-                                :: rendered.others
+                                )
+                                rendered.others
                     }
 
                 Batch batched ->
                     { rendered
                         | others =
-                            renderRules (emptyIntermediate parent.selector "") batched
-                                :: rendered.others
+                            Array.pushFirst 
+                                (renderRules (emptyIntermediate parent.selector "") batched)
+                                rendered.others
                     }
     in
-    Intermediate <| List.foldr generateIntermediates parent rulesToRender
+    Intermediate <| Array.foldr generateIntermediates parent rulesToRender
 
 
-render : List Class -> String
+render : Array Class -> String
 render classNames =
     let
         renderValues values =
             values
-                |> List.map (\( x, y ) -> "  " ++ x ++ ": " ++ y ++ ";")
+                |> Array.map (\{ prop, value } -> "  " ++ prop ++ ": " ++ value ++ ";")
                 |> String.join "\n"
 
         renderClass rule =
@@ -608,24 +619,26 @@ render classNames =
 
         renderIntermediate (Intermediate rule) =
             renderClass rule
-                ++ String.join "\n" (List.map renderIntermediate rule.others)
+                ++ String.join "\n" (Array.map renderIntermediate rule.others)
     in
     classNames
-        |> List.foldr
+        |> Array.foldr
             (\(Class name styleRules) existing ->
-                renderRules (emptyIntermediate name "") styleRules :: existing
+                Array.pushFirst 
+                    (renderRules (emptyIntermediate name "") styleRules)
+                    existing
             )
             []
-        |> List.map renderIntermediate
+        |> Array.map renderIntermediate
         |> String.join "\n"
 
 
-renderCompact : List Class -> String
+renderCompact : Array Class -> String
 renderCompact styleClasses =
     let
         renderValues values =
             values
-                |> List.map (\( x, y ) -> x ++ ":" ++ y ++ ";")
+                |> Array.map (\{ prop, value } -> prop ++ ":" ++ value ++ ";")
                 |> String.concat
 
         renderClass rule =
@@ -638,15 +651,17 @@ renderCompact styleClasses =
 
         renderIntermediate (Intermediate rule) =
             renderClass rule
-                ++ String.concat (List.map renderIntermediate rule.others)
+                ++ String.concat (Array.map renderIntermediate rule.others)
     in
     styleClasses
-        |> List.foldr
+        |> Array.foldr
             (\(Class name styleRules) existing ->
-                renderRules (emptyIntermediate name "") styleRules :: existing
+                Array.pushFirst 
+                    (renderRules (emptyIntermediate name "") styleRules)
+                    existing
             )
             []
-        |> List.map renderIntermediate
+        |> Array.map renderIntermediate
         |> String.concat
 
 
@@ -658,10 +673,10 @@ viewportRules =
 } """ ++ rules
 
 
-describeText : String -> List Rule -> Rule
+describeText : String -> Array Rule -> Rule
 describeText cls props =
     Descriptor cls
-        (List.map makeImportant props
+        (Array.map makeImportant props
             ++ [ Child ".text"
                     props
                , Child ".el"
@@ -806,22 +821,22 @@ explainer =
 
 
 commonValues =
-    List.concat
-        [ List.map
+    Array.flatten
+        [ Array.map
             (\x ->
                 Class (".border-" ++ String.fromInt x) [ Prop "border-width" (String.fromInt x ++ "px") ]
             )
-            (List.range 0 6)
-        , List.map
+            (Array.initialize 6 0 identity)
+        , Array.map
             (\i ->
                 Class (".font-size-" ++ String.fromInt i) [ Prop "font-size" (String.fromInt i ++ "px") ]
             )
-            (List.range 8 32)
-        , List.map
+            (Array.initialize 17 8 identity)
+        , Array.map
             (\i ->
                 Class (".p-" ++ String.fromInt i) [ Prop "padding" (String.fromInt i ++ "px") ]
             )
-            (List.range 0 24)
+            (Array.initialize 24 0 identity)
 
         -- Common Font Variants
         , [ Class ".v-smcp"
@@ -910,46 +925,46 @@ elDescription =
         \alignment ->
             case alignment of
                 Top ->
-                    ( [ Prop "justify-content" "flex-start" ]
-                    , [ Prop "margin-bottom" "auto !important"
+                    { content= [ Prop "justify-content" "flex-start" ]
+                    , indiv = [ Prop "margin-bottom" "auto !important"
                       , Prop "margin-top" "0 !important"
                       ]
-                    )
+                    }
 
                 Bottom ->
-                    ( [ Prop "justify-content" "flex-end" ]
-                    , [ Prop "margin-top" "auto !important"
+                    { content = [ Prop "justify-content" "flex-end" ]
+                    , indiv = [ Prop "margin-top" "auto !important"
                       , Prop "margin-bottom" "0 !important"
                       ]
-                    )
+                    }
 
                 Right ->
-                    ( [ Prop "align-items" "flex-end" ]
-                    , [ Prop "align-self" "flex-end" ]
-                    )
+                    {content = [ Prop "align-items" "flex-end" ]
+                    , indiv = [ Prop "align-self" "flex-end" ]
+                    }
 
                 Left ->
-                    ( [ Prop "align-items" "flex-start" ]
-                    , [ Prop "align-self" "flex-start" ]
-                    )
+                    {content = [ Prop "align-items" "flex-start" ]
+                    , indiv =[ Prop "align-self" "flex-start" ]
+                    }
 
                 CenterX ->
-                    ( [ Prop "align-items" "center" ]
-                    , [ Prop "align-self" "center"
+                    {content = [ Prop "align-items" "center" ]
+                    , indiv=[ Prop "align-self" "center"
                       ]
-                    )
+                    }
 
                 CenterY ->
-                    ( [ -- Prop "justify-content" "center"
+                    {content = [ -- Prop "justify-content" "center"
                         Child (dot classes.any)
                             [ Prop "margin-top" "auto"
                             , Prop "margin-bottom" "auto"
                             ]
                       ]
-                    , [ Prop "margin-top" "auto !important"
+                    , indiv = [ Prop "margin-top" "auto !important"
                       , Prop "margin-bottom" "auto !important"
                       ]
-                    )
+                    }
     ]
 
 
@@ -1008,7 +1023,7 @@ baseSheet =
         , Descriptor (dot classes.single)
             elDescription
         , Batch <|
-            (\fn -> List.map fn locations) <|
+            (\fn -> Array.map fn locations) <|
                 \loc ->
                     case loc of
                         Above ->
@@ -1182,7 +1197,7 @@ baseSheet =
         , Descriptor (dot classes.transition)
             [ Prop "transition"
                 (String.join ", " <|
-                    List.map (\x -> x ++ " 160ms")
+                    Array.map (\x -> x ++ " 160ms")
                         [ "transform"
                         , "opacity"
                         , "filter"
@@ -1332,40 +1347,40 @@ baseSheet =
                 \alignment ->
                     case alignment of
                         Top ->
-                            ( [ Prop "align-items" "flex-start" ]
-                            , [ Prop "align-self" "flex-start"
+                            {content = [ Prop "align-items" "flex-start" ]
+                            , indiv=[ Prop "align-self" "flex-start"
                               ]
-                            )
+                            }
 
                         Bottom ->
-                            ( [ Prop "align-items" "flex-end" ]
-                            , [ Prop "align-self" "flex-end"
+                            { content = [ Prop "align-items" "flex-end" ]
+                            , indiv = [ Prop "align-self" "flex-end"
                               ]
-                            )
+                            }
 
                         Right ->
-                            ( [ Prop "justify-content" "flex-end"
+                            { content = [ Prop "justify-content" "flex-end"
                               ]
-                            , []
-                            )
+                            ,indiv =  []
+                            }
 
                         Left ->
-                            ( [ Prop "justify-content" "flex-start"
+                            { content =  [ Prop "justify-content" "flex-start"
                               ]
-                            , []
-                            )
+                            , indiv = []
+                            }
 
                         CenterX ->
-                            ( [ Prop "justify-content" "center"
+                            { content = [ Prop "justify-content" "center"
                               ]
-                            , []
-                            )
+                            , indiv = []
+                            }
 
                         CenterY ->
-                            ( [ Prop "align-items" "center" ]
-                            , [ Prop "align-self" "center"
+                            { content = [ Prop "align-items" "center" ]
+                            , indiv = [ Prop "align-self" "center"
                               ]
-                            )
+                            }
 
             -- Must be below the alignment rules or else it interferes
             , Descriptor (dot classes.spaceEvenly)
@@ -1467,35 +1482,35 @@ baseSheet =
                 \alignment ->
                     case alignment of
                         Top ->
-                            ( [ Prop "justify-content" "flex-start" ]
-                            , [ Prop "margin-bottom" "auto" ]
-                            )
+                            { content = [ Prop "justify-content" "flex-start" ]
+                            , indiv = [ Prop "margin-bottom" "auto" ]
+                            }
 
                         Bottom ->
-                            ( [ Prop "justify-content" "flex-end" ]
-                            , [ Prop "margin-top" "auto" ]
-                            )
+                            { content = [ Prop "justify-content" "flex-end" ]
+                            , indiv = [ Prop "margin-top" "auto" ]
+                            }
 
                         Right ->
-                            ( [ Prop "align-items" "flex-end" ]
-                            , [ Prop "align-self" "flex-end" ]
-                            )
+                            { content = [ Prop "align-items" "flex-end" ]
+                            , indiv = [ Prop "align-self" "flex-end" ]
+                            }
 
                         Left ->
-                            ( [ Prop "align-items" "flex-start" ]
-                            , [ Prop "align-self" "flex-start" ]
-                            )
+                            { content = [ Prop "align-items" "flex-start" ]
+                            , indiv = [ Prop "align-self" "flex-start" ]
+                            }
 
                         CenterX ->
-                            ( [ Prop "align-items" "center" ]
-                            , [ Prop "align-self" "center"
+                            { content = [ Prop "align-items" "center" ]
+                            , indiv = [ Prop "align-self" "center"
                               ]
-                            )
+                            }
 
                         CenterY ->
-                            ( [ Prop "justify-content" "center" ]
-                            , []
-                            )
+                            { content = [ Prop "justify-content" "center" ]
+                            , indiv = []
+                            }
             , Child (dot classes.container)
                 [ Prop "flex-grow" "0"
                 , Prop "flex-basis" "auto"
@@ -1513,8 +1528,8 @@ baseSheet =
                     [ Prop "width" "100%"
                     ]
                 ]
-            , Supports ( "display", "grid" )
-                [ ( "display", "grid" )
+            , Supports {prop= "display", value ="grid" }
+                [ {prop= "display", value ="grid" }
                 ]
             , gridAlignments <|
                 \alignment ->
@@ -1554,46 +1569,46 @@ baseSheet =
                 \alignment ->
                     case alignment of
                         Top ->
-                            ( []
-                            , []
-                            )
+                            { content = []
+                            , indiv = []
+                            }
 
                         Bottom ->
-                            ( []
-                            , []
-                            )
+                            { content =  []
+                            , indiv = []
+                            }
 
                         Right ->
-                            ( []
-                            , [ Prop "float" "right"
+                            {content = []
+                            , indiv = [ Prop "float" "right"
                               , Descriptor "::after"
                                     [ Prop "content" "\"\""
                                     , Prop "display" "table"
                                     , Prop "clear" "both"
                                     ]
                               ]
-                            )
+                            }
 
                         Left ->
-                            ( []
-                            , [ Prop "float" "left"
+                            { content = []
+                            , indiv = [ Prop "float" "left"
                               , Descriptor "::after"
                                     [ Prop "content" "\"\""
                                     , Prop "display" "table"
                                     , Prop "clear" "both"
                                     ]
                               ]
-                            )
+                            }
 
                         CenterX ->
-                            ( []
-                            , []
-                            )
+                            { content = []
+                            , indiv = []
+                            }
 
                         CenterY ->
-                            ( []
-                            , []
-                            )
+                            { content = []
+                            , indiv = []
+                            }
             ]
         , Descriptor (dot classes.inputMultiline)
             [ Prop "white-space" "pre-wrap !important"
@@ -1693,34 +1708,34 @@ baseSheet =
                 \alignment ->
                     case alignment of
                         Top ->
-                            ( []
-                            , []
-                            )
+                            { content = []
+                            , indiv = []
+                            }
 
                         Bottom ->
-                            ( []
-                            , []
-                            )
+                            { content = []
+                            , indiv = []
+                            }
 
                         Right ->
-                            ( []
-                            , [ Prop "float" "right" ]
-                            )
+                            { content = []
+                            , indiv = [ Prop "float" "right" ]
+                            }
 
                         Left ->
-                            ( []
-                            , [ Prop "float" "left" ]
-                            )
+                            { content = []
+                            , indiv = [ Prop "float" "left" ]
+                            }
 
                         CenterX ->
-                            ( []
-                            , []
-                            )
+                            { content = []
+                            , indiv = []
+                            }
 
                         CenterY ->
-                            ( []
-                            , []
-                            )
+                            { content = []
+                            , indiv = []
+                            }
             ]
         , Descriptor ".hidden"
             [ Prop "display" "none"

@@ -59,6 +59,7 @@ module Internal.Flag exposing
 {-| -}
 
 import Bitwise
+import Math
 
 
 type Field
@@ -78,10 +79,10 @@ none =
 value myFlag =
     case myFlag of
         Flag first ->
-            round (logBase 2 (toFloat first))
+            Math.round (Math.logBase 2 (toFloat first))
 
         Second second ->
-            round (logBase 2 (toFloat second)) + 32
+            Math.round (Math.logBase 2 (toFloat second)) + 32
 
 
 {-| If the query is in the truth, return True
